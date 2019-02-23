@@ -70,6 +70,19 @@ int version_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void
     return 1;
 }
 
+/* OpenSSL function declarations for cleanup */
+int FIPS_mode_set();
+void CRYPTO_set_locking_callback();
+void CRYPTO_set_id_callback();
+void SSL_COMP_free_compression_methods();
+int ENGINE_cleanup();
+int CONF_modules_free();
+int CONF_modules_unload();
+void COMP_zlib_cleanup();
+int ERR_free_strings();
+void EVP_cleanup();
+void CRYPTO_cleanup_all_ex_data();
+void ERR_remove_state();
 
 int message_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
@@ -183,9 +196,25 @@ int main(int argc, char **argv)
        our connect handler will trigger an exit */
     xmpp_run(ctx);
 
+    /* cleanup OpenSSL */
+    FIPS_mode_set(0);
+    CRYPTO_set_locking_callback(NULL);
+    CRYPTO_set_id_callback(NULL);
+    SSL_COMP_free_compression_methods();
+    ENGINE_cleanup();
+    CONF_modules_free();
+    CONF_modules_unload();
+    COMP_zlib_cleanup();
+    ERR_free_strings();
+    EVP_cleanup();
+    CRYPTO_cleanup_all_ex_data();
+
     /* release our connection and context */
     xmpp_conn_release(conn);
     xmpp_ctx_free(ctx);
+
+    /* cleanup OpenSSL (must do for every thread) */
+    ERR_remove_state(0);
 
     /* final shutdown of the library */
     xmpp_shutdown();
