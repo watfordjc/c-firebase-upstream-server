@@ -1,17 +1,18 @@
-/* bot.c
-** libstrophe XMPP client library -- basic usage example
+/* firebase-upstream-server.c
+** Firebase upstream messaging XMPP client (app server)
 **
-** Copyright (C) 2005-2009 Collecta, Inc. 
+** Copyright (C) 2019 John Cook
+** Copyright (C) 2005-2009 Collecta, Inc.
 **
 **  This software is provided AS-IS with no warranty, either express
 **  or implied.
 **
-** This program is dual licensed under the MIT and GPLv3 licenses.
-*/
+** This program is licensed under the MIT licence.
 
 /* simple bot example
-**  
-** This example was provided by Matthew Wild <mwild1@gmail.com>.
+**
+** This program is based on an example provided to libstrophe
+** by Matthew Wild <mwild1@gmail.com>.
 **
 ** This bot responds to basic messages and iq version requests.
 */
