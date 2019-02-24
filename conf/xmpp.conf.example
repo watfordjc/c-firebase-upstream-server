@@ -1,0 +1,20 @@
+servers:
+({
+  enabled = false;
+
+  logins:
+  ({
+    jid: "username@example.com";
+    pass: "haveibeenpwned?";
+  })
+},
+{
+  enabled = false;
+  hostname = "test.xmpp.example.com";
+
+  logins:
+  ({
+    jid: "username@example.net";
+    pass: "haveibeenpwned?"
+  })
+});
