@@ -95,7 +95,7 @@ sock_t sock_connect(const char * const host, const unsigned short port)
         if (sock < 0)
             continue;
 
-        err = sock_set_nonblocking(sock);
+        err = sock_set_blocking(sock);
         if (err == 0) {
             err = connect(sock, ainfo->ai_addr, ainfo->ai_addrlen);
             if (err == 0 || _in_progress(sock_error()))
