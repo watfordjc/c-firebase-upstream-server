@@ -17,12 +17,49 @@
 ** This bot responds to basic messages and iq version requests.
 */
 
+/* Standard Libraries */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <getopt.h>
+/* libstrophe */
 #include <strophe.h>
+/* libconfig */
+#include <libconfig.h>
 
+char *CONFIG_FILE = "";
+
+int max_logins = 1;
+struct config_settings *logins[1];
+int logins_count = 0;
+
+struct config_settings
+{
+  int enabled;
+  const char *host;
+  const char *jid;
+  const char *pass;
+  struct config_setting_t *pointer;
+};
+struct config_t conf;
+struct config_t *config;
+
+int command_options(int argc, char **argv);
+
+void open_config();
+void close_config();
+
+int get_root_element_count(config_t *config, char *name, config_setting_t *config_element);
+int get_element_count(config_setting_t *config, char *name, config_setting_t *config_element);
+int get_config_int(config_setting_t *setting, char *name);
+int get_config_bool(config_setting_t *setting, char *name);
+const char *get_config_string(config_setting_t *setting, char *name);
+
+/* Uncomment if libconfig < v1.5 - renamed function */
+/* #define config_setting_lookup config_lookup_from */
+
+void servers_iterate();
+void logins_iterate(int serverInt, struct config_settings server_login, struct config_setting_t *server_element);
 
 int version_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
@@ -83,6 +120,8 @@ int ERR_free_strings();
 void EVP_cleanup();
 void CRYPTO_cleanup_all_ex_data();
 void ERR_remove_state();
+
+int verbose;
 
 int message_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
@@ -157,25 +196,40 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
 
 int main(int argc, char **argv)
 {
+  #ifdef BE_VERBOSE
+  verbose = 1;
+  #endif
+
+  command_options(argc, argv);
+  open_config();
+
+  /*
+  * Iterate through configuration file recursively via servers_iterate() and logins_iterate().
+  * logins_iterate() populates *logins[].
+  */
+  servers_iterate();
+
+  if (logins_count != 1)
+  {
+    fprintf(stderr, "This version of the program requires one login.\n");
+    close_config();
+    exit(1);
+  }
+  struct config_settings *loginPtr = logins[0];
+  struct config_settings login = *loginPtr;
+
   xmpp_ctx_t *ctx;
   xmpp_conn_t *conn;
   xmpp_log_t *log;
-  char *jid, *pass;
-
-  /* take a jid and password on the command line */
-  if (argc != 3) {
-    fprintf(stderr, "Usage: bot <jid> <pass>\n\n");
-    return 1;
-  }
-
-  jid = argv[1];
-  pass = argv[2];
+  const char *jid = login.jid;
+  const char *pass = login.pass;
+  const char *host = login.host;
 
   /* init library */
   xmpp_initialize();
 
   /* create a context */
-  log = xmpp_get_default_logger(XMPP_LEVEL_DEBUG); /* pass NULL instead to silence output */
+  log = verbose == 1 ? xmpp_get_default_logger(XMPP_LEVEL_DEBUG) : xmpp_get_default_logger(XMPP_LEVEL_INFO); /* pass NULL instead to silence output */
   ctx = xmpp_ctx_new(NULL, log);
 
   /* create a connection */
@@ -193,7 +247,7 @@ int main(int argc, char **argv)
   xmpp_conn_set_pass(conn, pass);
 
   /* initiate connection */
-  xmpp_connect_client(conn, NULL, 0, conn_handler, ctx);
+  xmpp_connect_client(conn, host, 0, conn_handler, ctx);
 
   /* enter the event loop -
   our connect handler will trigger an exit */
@@ -223,4 +277,295 @@ int main(int argc, char **argv)
   xmpp_shutdown();
 
   return 0;
+}
+
+int command_options(int argc, char **argv)
+{
+  /* handle command line arguments */
+  int c;
+  while (1)
+  {
+    /*
+    * Values returned are char, so start at 1001 for long options without short
+    *  equivalent so they don't interfere with short options (e.g. 'z' = 122).
+    * If a decision is made to later add a short option, change the number in
+    *  the array and the case statement for that option (e.g. replacing 1008 with '4'.
+    */
+    static struct option long_options[] =
+    {
+      {"config", required_argument, 0, 1001},
+      {"verbose", no_argument, 0, 'v'},
+      {"help", no_argument, 0, 'h'},
+      {0, 0, 0, 0}
+    };
+
+    int option_index = 0;
+    c = getopt_long(argc, argv, "hv", long_options, &option_index);
+    if (c == -1)
+    {
+      break;
+    }
+
+    switch (c)
+    {
+      case 0:
+        /* if this options, set a flag, do nothing else now */
+        if (long_options[option_index].flag != 0)
+        {
+          break;
+        }
+        break;
+      case 1001:
+        CONFIG_FILE = optarg;
+        break;
+      case 'h':
+        printf("Usage: %s [options]\n", argv[0]);
+        printf("Options:\n");
+        printf("  --config <file>\n");
+        printf("    Path to configuration file.\n");
+        printf("  --verbose\n");
+        printf("    Use DEBUG level of libstrophe logging.\n");
+        printf("  --help\n");
+        printf("    Display this information.\n");
+        exit(0);
+        break;
+      case 'v':
+        verbose = 1;
+        break;
+      default:
+        fprintf(stderr, "Command options fall through.\n");
+        abort();
+    }
+  }
+}
+
+void open_config()
+{
+  if (strlen(CONFIG_FILE) == 0)
+  {
+    fprintf(stderr, "No configuration file specified.\n");
+    exit(1);
+  }
+
+  config = &conf;
+  config_init(config);
+
+  int loaded_config = config_read_file(config, CONFIG_FILE);
+  if (loaded_config != 1)
+  {
+    fprintf(stderr, "Error reading config file %s. Error on line %d: %s\n", config_error_file(config), config_error_line(config), config_error_text(config));
+    config_destroy(config);
+  }
+}
+
+void close_config()
+{
+  // Cleanup before config_destroy()
+  for (int i = 0; i < logins_count; i++)
+  {
+    struct config_settings *loginPtr = logins[i];
+    free(loginPtr);
+  }
+  config_destroy(config);
+}
+
+void servers_iterate(struct config_settings *logins[], int *logins_count, int max_logins)
+{
+  /* Loop through servers */
+  struct config_setting_t conf_servers;
+  struct config_setting_t *config_servers = &conf_servers;
+  int server_count = get_root_element_count(config, "servers", config_servers);
+  #ifdef BE_VERBOSE
+  printf("Number of servers: %d\n", server_count);
+  #endif
+
+  for (int i = 0; i < server_count; i++)
+  {
+    struct config_setting_t *server_element = config_setting_get_elem(config_servers, i);
+    if (server_element == NULL)
+    {
+      continue;
+    }
+    struct config_settings server_login = {0};
+    server_login.pointer = server_element;
+
+    struct config_setting_t *server_setting = NULL;
+
+    int server_enabled = get_config_bool(server_element, "enabled");
+    if (server_enabled == 0)
+    {
+      fprintf(stdout, "Server %d is not enabled.\n", i);
+      continue;
+    }
+    else if (server_enabled > 0)
+    {
+      server_login.enabled = server_enabled;
+      server_login.host = get_config_string(server_element, "host");
+      #ifdef BE_VERBOSE
+      printf("servers[%d].enabled = %d\n", i, server_login.enabled);
+      printf("servers[%d].host = %s\n", i, server_login.host);
+      #endif
+
+      logins_iterate(i, server_login, server_element);
+    }
+  }
+}
+
+void logins_iterate(int serverNumber, struct config_settings server_login, struct config_setting_t *server_element)
+{
+  /*
+  * Loop through logins.
+  */
+
+  struct config_setting_t *conf_logins = config_setting_lookup(server_element, "logins");
+  if (conf_logins == NULL)
+  {
+    fprintf(stdout, "No logins defined for server %d.\n", serverNumber);
+  }
+  int login_count = config_setting_length(conf_logins);
+  #ifdef BE_VERBOSE
+  printf("Number of logins for server %d: %d\n", serverNumber, login_count);
+  #endif
+
+  for (int i = 0; i < login_count; i++)
+  {
+    struct config_setting_t *login_element = config_setting_get_elem(conf_logins, i);
+    if (login_element == NULL)
+    {
+      continue;
+    }
+
+    struct config_settings *loginPtr = NULL;
+    loginPtr = (struct config_settings *) malloc(sizeof(struct config_settings));
+    #ifdef BE_VERBOSE
+    printf("Pointer loginPtr: %p\n", loginPtr);
+    #endif
+    memcpy(loginPtr, &server_login, sizeof(struct config_settings));
+    loginPtr->pointer = login_element;
+    loginPtr->jid = get_config_string(login_element, "jid");
+    loginPtr->pass = get_config_string(login_element, "pass");
+
+    #ifdef BE_VERBOSE
+    printf("servers[%d].logins[%d].jid length = %d\n", serverNumber, i, (int) strlen(loginPtr->jid));
+    printf("servers[%d].logins[%d].pass length = %d\n", serverNumber, i, (int) strlen(loginPtr->pass));
+    printf("servers[%d].logins[%d].pointer = %p\n", serverNumber, i, loginPtr->pointer);
+    #endif
+
+    if (logins_count < max_logins)
+    {
+      logins[logins_count] = loginPtr;
+      logins_count++;
+    }
+    else
+    {
+      fprintf(stderr, "Compiled with only %d maximum logins, configuration file contains at least %d.\n", max_logins, logins_count+1);
+      fprintf(stderr, "Please modify 'int max_logins = %d' in source code and recompile.\n", max_logins);
+      config_destroy(config);
+      exit(1);
+    }
+  }
+}
+
+/*
+* Function get_root_element_count:
+*       * Returns number (int) of elements in list 'name' in configuration 'config'.
+*       * Updates pointer '*config_element' to point to element 'name'.
+*
+* config_t *config : pointer to parsed config
+* char *name : pointer to name of element
+* config_setting_t *conf_element : pointer to element
+*/
+int get_root_element_count(config_t *config, char *name, config_setting_t *config_element)
+{
+  config_setting_t *conf_element = config_lookup(config, name);
+  if (conf_element == NULL)
+  {
+    fprintf(stderr, "No %s found in configuration file.\n", name);
+    exit(1);
+  }
+  else
+  {
+    *config_element = *conf_element;
+    return config_setting_length(config_element);
+  }
+}
+
+/*
+* Function get_element_count:
+*       * Returns number (int) of elements in list 'name' in configuration setting 'config_setting'.
+*       * Updates pointer '*config_element' to point to element 'name'.
+*
+* config_setting_t *config : pointer to parsed config setting
+* char *name : pointer to name of element
+* config_setting_t *conf_element : pointer to element
+*/
+int get_element_count(config_setting_t *config_setting, char *name, config_setting_t *config_element)
+{
+  config_setting_t *conf_element = config_setting_lookup(config_setting, name);
+  if (conf_element == NULL)
+  {
+    fprintf(stderr, "No %s found in configuration file for this account.\n", name);
+    return 0;
+  }
+  else {
+    *config_element = *conf_element;
+    return config_setting_length(config_element);
+  }
+}
+
+/*
+* Function get_config_int looks up the integer value of 'name'
+*  in the configuration setting 'setting' and returns the integer.
+* -1 is returned if 'name' does not exist.
+*/
+int get_config_int(config_setting_t *setting, char *name)
+{
+  config_setting_t *setting_pointer = NULL;
+  setting_pointer = config_setting_lookup(setting, name);
+  if (setting_pointer != NULL)
+  {
+    return config_setting_get_int(setting_pointer);
+  }
+  else
+  {
+    return -1;
+  }
+}
+
+/*
+* Function get_config_bool looks up the boolean value of 'name'
+*  in the configuration setting 'setting' and returns it as an integer.
+* -1 is returned if 'name' does not exist.
+*/
+int get_config_bool(config_setting_t *setting, char *name)
+{
+  config_setting_t *setting_pointer = NULL;
+  setting_pointer = config_setting_lookup(setting, name);
+  if (setting_pointer != NULL)
+  {
+    return config_setting_get_bool(setting_pointer);
+  }
+  else
+  {
+    return -1;
+  }
+}
+
+/*
+* Function get_config_string looks up the string value of 'name'
+*  in the configuration setting 'setting' and returns the string.
+* NULL is returned if 'name' does not exist.
+*/
+const char *get_config_string(config_setting_t *setting, char *name)
+{
+  config_setting_t *setting_pointer = NULL;
+  setting_pointer = config_setting_lookup(setting, name);
+  if (setting_pointer != NULL)
+  {
+    return config_setting_get_string(setting_pointer);
+  }
+  else
+  {
+    return NULL;
+  }
 }

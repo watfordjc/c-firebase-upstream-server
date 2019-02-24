@@ -37,3 +37,4 @@ c-firebase-upstream-server.project
 libs/
 obj/
 expat/
+conf/*.conf
