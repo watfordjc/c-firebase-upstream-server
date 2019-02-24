@@ -300,10 +300,6 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
     xmpp_handler_add(conn, fcm_upstream_handler, "google:mobile:data", "message", NULL, ctx);
     xmpp_handler_add(conn, message_handler, NULL, "message", NULL, ctx);
 
-    /* Send initial <presence/> so that we appear online to contacts */
-    pres = xmpp_presence_new(ctx);
-    xmpp_send(conn, pres);
-    xmpp_stanza_release(pres);
   } else {
     fprintf(stderr, "DEBUG: DISCONNECTED\n");
     xmpp_stop(ctx);
