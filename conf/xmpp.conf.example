@@ -2,6 +2,7 @@ servers:
 ({
   enabled = false;
   tls = "starttls";
+  port = 5222;
 
   logins:
   ({
@@ -12,7 +13,8 @@ servers:
 {
   enabled = false;
   tls = "tls";
-  hostname = "test.xmpp.example.com";
+  port = 5223;
+  host = "test.xmpp.example.com";
 
   logins:
   ({
