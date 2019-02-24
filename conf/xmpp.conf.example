@@ -1,6 +1,7 @@
 servers:
 ({
   enabled = false;
+  tls = "starttls";
 
   logins:
   ({
@@ -10,6 +11,7 @@ servers:
 },
 {
   enabled = false;
+  tls = "tls";
   hostname = "test.xmpp.example.com";
 
   logins:

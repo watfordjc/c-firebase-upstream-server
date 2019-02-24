@@ -37,6 +37,7 @@ struct config_settings
 {
   int enabled;
   const char *host;
+  long flags;
   const char *jid;
   const char *pass;
   struct config_setting_t *pointer;
@@ -57,6 +58,8 @@ const char *get_config_string(config_setting_t *setting, char *name);
 
 /* Uncomment if libconfig < v1.5 - renamed function */
 /* #define config_setting_lookup config_lookup_from */
+
+long get_tls_flags(const char *tls);
 
 void servers_iterate();
 void logins_iterate(int serverInt, struct config_settings server_login, struct config_setting_t *server_element);
@@ -230,17 +233,13 @@ int main(int argc, char **argv)
 
   /* create a context */
   log = verbose == 1 ? xmpp_get_default_logger(XMPP_LEVEL_DEBUG) : xmpp_get_default_logger(XMPP_LEVEL_INFO); /* pass NULL instead to silence output */
+
   ctx = xmpp_ctx_new(NULL, log);
 
   /* create a connection */
   conn = xmpp_conn_new(ctx);
 
-  /*
-  * also you can disable TLS support or force legacy SSL
-  * connection without STARTTLS
-  *
-  * see xmpp_conn_set_flags() or examples/basic.c
-  */
+  xmpp_conn_set_flags(conn, login.flags);
 
   /* setup authentication information */
   xmpp_conn_set_jid(conn, jid);
@@ -401,9 +400,13 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
     {
       server_login.enabled = server_enabled;
       server_login.host = get_config_string(server_element, "host");
+      const char *server_tls = get_config_string(server_element, "tls");
+      server_login.flags = get_tls_flags(server_tls);
+
       #ifdef BE_VERBOSE
       printf("servers[%d].enabled = %d\n", i, server_login.enabled);
       printf("servers[%d].host = %s\n", i, server_login.host);
+      printf("servers[%d].flags = %d\n", i, (int) server_login.flags);
       #endif
 
       logins_iterate(i, server_login, server_element);
@@ -568,4 +571,47 @@ const char *get_config_string(config_setting_t *setting, char *name)
   {
     return NULL;
   }
+}
+
+/*
+* Function get_tls_flags converts a configuration file string to a
+*  long for libstrophe.
+*/
+long get_tls_flags(const char *tls)
+{
+  long flags = 0;
+  /* Mandatory StartTLS is the default and fallback option as that is the
+  *   assumed server configuration per federated XMPP requirements
+  *   and RFC 7590. It can be explicitly configured in a config file with:
+  *     tls="starttls";
+  * Mandatory TLS (legacy/old style/non-StartTLS) is an option:
+  *     tls="tls";
+  * Optional StartTLS (plaintext fallback) is an option that can be used with:
+  *     tls="optional";
+  * Plaintext is also a configurable option:
+  *     tls="plaintext";
+  */
+  #ifdef BE_VERBOSE
+  printf("tls: %s\n", tls);
+  #endif
+
+  if (
+      (tls == NULL)
+      || (strcmp("starttls", tls) == 0)
+      || (strcmp("", tls) == 0)
+    ) {
+      flags |= XMPP_CONN_FLAG_MANDATORY_TLS;
+    } else if (
+      (strcmp("tls", tls) == 0)
+    ) {
+      flags |= XMPP_CONN_FLAG_LEGACY_SSL;
+      flags |= XMPP_CONN_FLAG_MANDATORY_TLS;
+    } else if (strcmp("plaintext", tls) == 0) {
+        flags |= XMPP_CONN_FLAG_DISABLE_TLS;
+    } else if (strcmp("optional", tls) == 0) {
+        flags = 0;
+    } else {
+      flags |= XMPP_CONN_FLAG_MANDATORY_TLS;
+    }
+  return flags;
 }
