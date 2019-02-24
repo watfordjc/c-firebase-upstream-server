@@ -37,6 +37,7 @@ struct config_settings
 {
   int enabled;
   const char *host;
+  unsigned short port;
   long flags;
   const char *jid;
   const char *pass;
@@ -60,6 +61,7 @@ const char *get_config_string(config_setting_t *setting, char *name);
 /* #define config_setting_lookup config_lookup_from */
 
 long get_tls_flags(const char *tls);
+unsigned short get_port(int port);
 
 void servers_iterate();
 void logins_iterate(int serverInt, struct config_settings server_login, struct config_setting_t *server_element);
@@ -227,6 +229,7 @@ int main(int argc, char **argv)
   const char *jid = login.jid;
   const char *pass = login.pass;
   const char *host = login.host;
+  unsigned short port = login.port;
 
   /* init library */
   xmpp_initialize();
@@ -246,7 +249,7 @@ int main(int argc, char **argv)
   xmpp_conn_set_pass(conn, pass);
 
   /* initiate connection */
-  xmpp_connect_client(conn, host, 0, conn_handler, ctx);
+  xmpp_connect_client(conn, host, port, conn_handler, ctx);
 
   /* enter the event loop -
   our connect handler will trigger an exit */
@@ -402,10 +405,13 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
       server_login.host = get_config_string(server_element, "host");
       const char *server_tls = get_config_string(server_element, "tls");
       server_login.flags = get_tls_flags(server_tls);
+      int server_port = get_config_int(server_element, "port");
+      server_login.port = get_port(server_port);
 
       #ifdef BE_VERBOSE
       printf("servers[%d].enabled = %d\n", i, server_login.enabled);
       printf("servers[%d].host = %s\n", i, server_login.host);
+      printf("servers[%d].port = %d\n", i, (int) server_login.port);
       printf("servers[%d].flags = %d\n", i, (int) server_login.flags);
       #endif
 
@@ -614,4 +620,16 @@ long get_tls_flags(const char *tls)
       flags |= XMPP_CONN_FLAG_MANDATORY_TLS;
     }
   return flags;
+}
+
+/*
+* Function get_port converts a configuration file integer to a short int.
+*/
+unsigned short get_port(int port)
+{
+  if (port <= 0 || port > 65535) {
+    return 0;
+  } else {
+    return (unsigned short) port;
+  }
 }
