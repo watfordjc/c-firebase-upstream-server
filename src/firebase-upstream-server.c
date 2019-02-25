@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <signal.h>
 /* libstrophe */
 #include <strophe.h>
 /* libconfig */
@@ -31,8 +32,12 @@ int use_record_separator = 0;
 int use_length_prefix = 0;
 int use_concat_output = 0;
 
+/* Limit number of simultaneous outbound connections to 1 */
+/* max_logins should equal the size of the arrays logins[] and connections[] */
 int max_logins = 1;
 struct config_settings *logins[1];
+xmpp_conn_t *connections[1] = {NULL};
+
 int logins_count = 0;
 
 struct config_settings
@@ -52,6 +57,7 @@ int command_options(int argc, char **argv);
 
 void open_config();
 void close_config();
+void handle_sigint();
 
 int get_root_element_count(config_t *config, char *name, config_setting_t *config_element);
 int get_element_count(config_setting_t *config, char *name, config_setting_t *config_element);
@@ -202,7 +208,7 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   if (not_a_message == TRUE) {
     fprintf(stderr, "from_fcm: This is a not a message, it is a %s\n", json_object_get_string(message_type));
     if (strcmp("control", json_object_get_string(message_type)) == 0) {
-      /* FCM control message, checkk control_type */
+      /* FCM control message, check control_type */
       control_type = NULL;
       json_object_object_get_ex(jobj, "control_type", &control_type);
       /* If control type is CONNECTION_DRAINING, announce to stderr */
@@ -252,6 +258,9 @@ int main(int argc, char **argv)
   xmpp_conn_t *conn;
   xmpp_log_t *log;
 
+  /* Close connections on SIGINT */
+  signal(SIGINT, handle_sigint);
+
   #ifdef BE_VERBOSE
   verbose = 1;
   #endif
@@ -284,6 +293,9 @@ int main(int argc, char **argv)
 
   /* create a connection */
   conn = xmpp_conn_new(ctx);
+  /* store pointer to connection in array */
+  connections[0] = conn;
+
 
   xmpp_conn_set_flags(conn, login.flags);
 
@@ -313,6 +325,7 @@ int main(int argc, char **argv)
 
   /* release our connection and context */
   xmpp_conn_release(conn);
+  connections[0] = NULL;
   xmpp_ctx_free(ctx);
 
   /* cleanup OpenSSL (must do for every thread) */
@@ -699,5 +712,18 @@ unsigned short get_port(int port)
     return 0;
   } else {
     return (unsigned short) port;
+  }
+}
+
+/*
+* Handle SIGINT signal - rely on xmpp_run() returning after connections closed
+*/
+void handle_sigint()
+{
+  int i;
+  for (i = 0; i < max_logins; i++) {
+    if (connections[i] != NULL) {
+      xmpp_disconnect(connections[i]);
+    }
   }
 }
