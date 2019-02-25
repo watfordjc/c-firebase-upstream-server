@@ -449,6 +449,7 @@ int command_options(int argc, char **argv)
         verbose = 1;
         break;
       default:
+        /* TODO: Ensure all command options are listed and functional. */
         fprintf(stderr, "Command options fall through.\n");
         abort();
     }
@@ -476,7 +477,7 @@ void open_config()
 
 void close_config()
 {
-  // Cleanup before config_destroy()
+  /* Cleanup before config_destroy() */
   for (int i = 0; i < logins_count; i++)
   {
     struct config_settings *loginPtr = logins[i];
