@@ -185,7 +185,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
 
   if (status == XMPP_CONN_CONNECT) {
     xmpp_stanza_t* pres;
-    fprintf(stderr, "DEBUG: connected\n");
+    fprintf(stderr, "DEBUG: CONNECTED\n");
     xmpp_handler_add(conn, version_handler, "jabber:iq:version", "iq", NULL, ctx);
     xmpp_handler_add(conn, message_handler, NULL, "message", NULL, ctx);
 
@@ -194,7 +194,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
     xmpp_send(conn, pres);
     xmpp_stanza_release(pres);
   } else {
-    fprintf(stderr, "DEBUG: disconnected\n");
+    fprintf(stderr, "DEBUG: DISCONNECTED\n");
     xmpp_stop(ctx);
   }
 }
@@ -216,7 +216,7 @@ int main(int argc, char **argv)
 
   if (logins_count != 1)
   {
-    fprintf(stderr, "This version of the program requires one login.\n");
+    fprintf(stderr, "conf: This version of the program requires one login.\n");
     close_config();
     exit(1);
   }
@@ -348,7 +348,7 @@ void open_config()
 {
   if (strlen(CONFIG_FILE) == 0)
   {
-    fprintf(stderr, "No configuration file specified.\n");
+    fprintf(stderr, "conf: No configuration file specified.\n");
     exit(1);
   }
 
@@ -358,7 +358,7 @@ void open_config()
   int loaded_config = config_read_file(config, CONFIG_FILE);
   if (loaded_config != 1)
   {
-    fprintf(stderr, "Error reading config file %s. Error on line %d: %s\n", config_error_file(config), config_error_line(config), config_error_text(config));
+    fprintf(stderr, "conf: Error reading config file %s. Error on line %d: %s\n", config_error_file(config), config_error_line(config), config_error_text(config));
     config_destroy(config);
   }
 }
@@ -381,7 +381,7 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
   struct config_setting_t *config_servers = &conf_servers;
   int server_count = get_root_element_count(config, "servers", config_servers);
   #ifdef BE_VERBOSE
-  fprintf(stderr, "Number of servers: %d\n", server_count);
+  fprintf(stderr, "conf: Number of servers: %d\n", server_count);
   #endif
 
   for (int i = 0; i < server_count; i++)
@@ -399,7 +399,7 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
     int server_enabled = get_config_bool(server_element, "enabled");
     if (server_enabled == 0)
     {
-      fprintf(stderr, "Server %d is not enabled.\n", i);
+      fprintf(stderr, "conf: Server %d is not enabled.\n", i);
       continue;
     }
     else if (server_enabled > 0)
@@ -432,11 +432,11 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
   struct config_setting_t *conf_logins = config_setting_lookup(server_element, "logins");
   if (conf_logins == NULL)
   {
-    fprintf(stderr, "No logins defined for server %d.\n", serverNumber);
+    fprintf(stderr, "conf: No logins defined for server %d.\n", serverNumber);
   }
   int login_count = config_setting_length(conf_logins);
   #ifdef BE_VERBOSE
-  fprintf(stderr, "Number of logins for server %d: %d\n", serverNumber, login_count);
+  fprintf(stderr, "conf: Number of logins for server %d: %d\n", serverNumber, login_count);
   #endif
 
   for (int i = 0; i < login_count; i++)
@@ -470,8 +470,8 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     }
     else
     {
-      fprintf(stderr, "Compiled with only %d maximum logins, configuration file contains at least %d.\n", max_logins, logins_count+1);
-      fprintf(stderr, "Please modify 'int max_logins = %d' in source code and recompile.\n", max_logins);
+      fprintf(stderr, "conf: Compiled with only %d maximum logins, configuration file contains at least %d.\n", max_logins, logins_count+1);
+      fprintf(stderr, "conf: Please modify 'int max_logins = %d' in source code and recompile.\n", max_logins);
       config_destroy(config);
       exit(1);
     }
@@ -492,7 +492,7 @@ int get_root_element_count(config_t *config, char *name, config_setting_t *confi
   config_setting_t *conf_element = config_lookup(config, name);
   if (conf_element == NULL)
   {
-    fprintf(stderr, "No %s found in configuration file.\n", name);
+    fprintf(stderr, "conf: No %s found in configuration file.\n", name);
     exit(1);
   }
   else
@@ -516,7 +516,7 @@ int get_element_count(config_setting_t *config_setting, char *name, config_setti
   config_setting_t *conf_element = config_setting_lookup(config_setting, name);
   if (conf_element == NULL)
   {
-    fprintf(stderr, "No %s found in configuration file for this account.\n", name);
+    fprintf(stderr, "conf: No %s found in configuration file for this account.\n", name);
     return 0;
   }
   else {
