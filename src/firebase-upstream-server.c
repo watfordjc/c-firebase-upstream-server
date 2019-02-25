@@ -278,6 +278,9 @@ int main(int argc, char **argv)
   /* final shutdown of the library */
   xmpp_shutdown();
 
+  /* close config file */
+  close_config();
+
   return 0;
 }
 
