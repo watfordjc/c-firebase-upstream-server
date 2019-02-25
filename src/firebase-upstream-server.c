@@ -26,6 +26,8 @@
 #include <strophe.h>
 /* libconfig */
 #include <libconfig.h>
+/* cJSON */
+#include <json-c/json.h>
 
 char *CONFIG_FILE = "";
 
@@ -128,6 +130,114 @@ void ERR_remove_state();
 
 int verbose;
 
+int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
+{
+  xmpp_ctx_t *ctx = (xmpp_ctx_t*)userdata;
+  xmpp_stanza_t *gcm, *reply_message, *reply_gcm, *reply_text;
+  char *intext;
+  json_bool not_a_message;
+
+  gcm = xmpp_stanza_get_child_by_name(stanza, "gcm");
+  if (gcm == NULL) {
+    return 1;
+  }
+
+  intext = xmpp_stanza_get_text(gcm);
+
+  struct json_tokener *tok = json_tokener_new();
+  json_object *jobj = NULL;
+  int stringlen = 0;
+  enum json_tokener_error jerr;
+  do
+  {
+    stringlen = strlen(intext);
+    jobj = json_tokener_parse_ex(tok, intext, stringlen);
+  } while ((jerr = json_tokener_get_error(tok)) == json_tokener_continue);
+  if (jerr != json_tokener_success)
+  {
+    if (jobj == NULL) {
+      fprintf(stderr, "from_fcm error: Invalid JSON\n");
+      fprintf(stderr, "from_fcm incoming message from %s: %s\n", xmpp_stanza_get_from(stanza), intext);
+    } else {
+      fprintf(stderr, "from_fcm error: %s\n", json_tokener_error_desc(jerr));
+    }
+    /* Handle errors, as appropriate for your application. */
+    json_object_put(jobj);
+    json_tokener_free(tok);
+    xmpp_free(ctx, intext);
+    return 1;
+  }
+  if (tok->char_offset < stringlen) /* XXX shouldn't access internal fields */
+  {
+    /* Handle extra characters after parsed object as desired.
+    *   e.g. issue an error, parse another object from that point, etc...
+    */
+    /* FCM upstream should only have one JSON object per message. */
+  }
+  /* Success, use jobj here. */
+  printf("%s\n", json_object_get_string(jobj));
+
+  struct json_object *message_type = NULL;
+  not_a_message = json_object_object_get_ex(jobj, "message_type", &message_type);
+  if (not_a_message == TRUE) {
+    fprintf(stderr, "from_fcm: This is a not a message, it is a %s\n", json_object_get_string(message_type));
+    if (strcmp("control", json_object_get_string(message_type)) == 0) {
+      /* FCM control message, checkk control_type */
+      struct json_object *control_type = NULL;
+      json_object_object_get_ex(jobj, "control_type", &control_type);
+      /* If control type is CONNECTION_DRAINING, announce to stderr */
+      if (strcmp("CONNECTION_DRAINING", json_object_get_string(control_type)) == 0) {
+        fprintf(stderr, "DEBUG: CONNECTION_DRAINING\n");
+      }
+    }
+    json_object_put(jobj);
+  } else {
+    fprintf(stderr, "from_fcm: This is a message.\n");
+
+    struct json_object *ack = json_object_new_object();
+
+    struct json_object *from = NULL;
+    json_object_object_get_ex(jobj, "from", &from);
+    json_object_object_add(ack, "to", from);
+
+    struct json_object *message_id = NULL;
+    json_object_object_get_ex(jobj, "message_id", &message_id);
+    json_object_object_add(ack, "message_id", message_id);
+
+    struct json_object *message_reply_type = json_object_new_string("ack");
+    json_object_object_add(ack, "message_type", message_reply_type);
+
+    reply_message = xmpp_stanza_new(ctx);
+    xmpp_stanza_set_name(reply_message, "message");
+    xmpp_stanza_set_attribute(reply_message, "id", "");
+
+    reply_gcm = xmpp_stanza_new(ctx);
+    xmpp_stanza_set_name(reply_gcm, "gcm");
+    xmpp_stanza_set_ns(reply_gcm, "google:mobile:data");
+    xmpp_stanza_add_child(reply_message, reply_gcm);
+    xmpp_stanza_release(reply_gcm);
+
+    reply_text = xmpp_stanza_new(ctx);
+    xmpp_stanza_set_text(reply_text, json_object_get_string(ack));
+    xmpp_stanza_add_child(reply_gcm, reply_text);
+    xmpp_stanza_release(reply_text);
+
+    xmpp_send(conn, reply_message);
+    xmpp_stanza_release(reply_message);
+
+    json_object_put(message_reply_type);
+    json_object_put(ack);
+    json_object_put(jobj);
+
+  }
+
+  json_tokener_free(tok);
+  xmpp_free(ctx, intext);
+  /* xmpp_disconnect(conn); */
+
+  return 1;
+}
+
 int message_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
   xmpp_ctx_t *ctx = (xmpp_ctx_t*)userdata;
@@ -187,6 +297,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
     xmpp_stanza_t* pres;
     fprintf(stderr, "DEBUG: CONNECTED\n");
     xmpp_handler_add(conn, version_handler, "jabber:iq:version", "iq", NULL, ctx);
+    xmpp_handler_add(conn, fcm_upstream_handler, "google:mobile:data", "message", NULL, ctx);
     xmpp_handler_add(conn, message_handler, NULL, "message", NULL, ctx);
 
     /* Send initial <presence/> so that we appear online to contacts */
