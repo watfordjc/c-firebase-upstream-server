@@ -324,14 +324,14 @@ int command_options(int argc, char **argv)
         CONFIG_FILE = optarg;
         break;
       case 'h':
-        printf("Usage: %s [options]\n", argv[0]);
-        printf("Options:\n");
-        printf("  --config <file>\n");
-        printf("    Path to configuration file.\n");
-        printf("  --verbose\n");
-        printf("    Use DEBUG level of libstrophe logging.\n");
-        printf("  --help\n");
-        printf("    Display this information.\n");
+        fprintf(stderr, "Usage: %s [options]\n", argv[0]);
+        fprintf(stderr, "Options:\n");
+        fprintf(stderr, "  --config <file>\n");
+        fprintf(stderr, "    Path to configuration file.\n");
+        fprintf(stderr, "  --verbose\n");
+        fprintf(stderr, "    Use DEBUG level of libstrophe logging.\n");
+        fprintf(stderr, "  --help\n");
+        fprintf(stderr, "    Display this information.\n");
         exit(0);
         break;
       case 'v':
@@ -381,7 +381,7 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
   struct config_setting_t *config_servers = &conf_servers;
   int server_count = get_root_element_count(config, "servers", config_servers);
   #ifdef BE_VERBOSE
-  printf("Number of servers: %d\n", server_count);
+  fprintf(stderr, "Number of servers: %d\n", server_count);
   #endif
 
   for (int i = 0; i < server_count; i++)
@@ -399,7 +399,7 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
     int server_enabled = get_config_bool(server_element, "enabled");
     if (server_enabled == 0)
     {
-      fprintf(stdout, "Server %d is not enabled.\n", i);
+      fprintf(stderr, "Server %d is not enabled.\n", i);
       continue;
     }
     else if (server_enabled > 0)
@@ -412,10 +412,10 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
       server_login.port = get_port(server_port);
 
       #ifdef BE_VERBOSE
-      printf("servers[%d].enabled = %d\n", i, server_login.enabled);
-      printf("servers[%d].host = %s\n", i, server_login.host);
-      printf("servers[%d].port = %d\n", i, (int) server_login.port);
-      printf("servers[%d].flags = %d\n", i, (int) server_login.flags);
+      fprintf(stderr, "servers[%d].enabled = %d\n", i, server_login.enabled);
+      fprintf(stderr, "servers[%d].host = %s\n", i, server_login.host);
+      fprintf(stderr, "servers[%d].port = %d\n", i, (int) server_login.port);
+      fprintf(stderr, "servers[%d].flags = %d\n", i, (int) server_login.flags);
       #endif
 
       logins_iterate(i, server_login, server_element);
@@ -432,11 +432,11 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
   struct config_setting_t *conf_logins = config_setting_lookup(server_element, "logins");
   if (conf_logins == NULL)
   {
-    fprintf(stdout, "No logins defined for server %d.\n", serverNumber);
+    fprintf(stderr, "No logins defined for server %d.\n", serverNumber);
   }
   int login_count = config_setting_length(conf_logins);
   #ifdef BE_VERBOSE
-  printf("Number of logins for server %d: %d\n", serverNumber, login_count);
+  fprintf(stderr, "Number of logins for server %d: %d\n", serverNumber, login_count);
   #endif
 
   for (int i = 0; i < login_count; i++)
@@ -450,7 +450,7 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     struct config_settings *loginPtr = NULL;
     loginPtr = (struct config_settings *) malloc(sizeof(struct config_settings));
     #ifdef BE_VERBOSE
-    printf("Pointer loginPtr: %p\n", loginPtr);
+    fprintf(stderr, "Pointer loginPtr: %p\n", loginPtr);
     #endif
     memcpy(loginPtr, &server_login, sizeof(struct config_settings));
     loginPtr->pointer = login_element;
@@ -458,9 +458,9 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     loginPtr->pass = get_config_string(login_element, "pass");
 
     #ifdef BE_VERBOSE
-    printf("servers[%d].logins[%d].jid length = %d\n", serverNumber, i, (int) strlen(loginPtr->jid));
-    printf("servers[%d].logins[%d].pass length = %d\n", serverNumber, i, (int) strlen(loginPtr->pass));
-    printf("servers[%d].logins[%d].pointer = %p\n", serverNumber, i, loginPtr->pointer);
+    fprintf(stderr, "servers[%d].logins[%d].jid length = %d\n", serverNumber, i, (int) strlen(loginPtr->jid));
+    fprintf(stderr, "servers[%d].logins[%d].pass length = %d\n", serverNumber, i, (int) strlen(loginPtr->pass));
+    fprintf(stderr, "servers[%d].logins[%d].pointer = %p\n", serverNumber, i, loginPtr->pointer);
     #endif
 
     if (logins_count < max_logins)
@@ -601,7 +601,7 @@ long get_tls_flags(const char *tls)
   *     tls="plaintext";
   */
   #ifdef BE_VERBOSE
-  printf("tls: %s\n", tls);
+  fprintf(stderr, "tls: %s\n", tls);
   #endif
 
   if (
