@@ -1,24 +1,25 @@
 servers:
 ({
   enabled = false;
-  tls = "starttls";
-  port = 5222;
+  tls = "tls";
+  port = 5235;
+  host = "fcm-xmpp.googleapis.com";
 
   logins:
   ({
-    jid: "username@example.com";
-    pass: "haveibeenpwned?";
+    jid: "SENDER_ID_NUMBER_MAIN_PROJECT@gcm.googleapis.com";
+    pass: "server_key:token"
   })
 },
 {
   enabled = false;
   tls = "tls";
-  port = 5223;
-  host = "test.xmpp.example.com";
+  port = 5236;
+  host = "fcm-xmpp.googleapis.com";
 
   logins:
   ({
-    jid: "username@example.net";
-    pass: "haveibeenpwned?"
+    jid: "SENDER_ID_NUMBER_TEST_PROJECT@gcm.googleapis.com";
+    pass: "server_key:token"
   })
 });
