@@ -26,6 +26,7 @@
 #include <json-c/json.h>
 
 char *CONFIG_FILE = "";
+char LINE_TERMINATOR = '\n';
 
 int max_logins = 1;
 struct config_settings *logins[1];
@@ -125,7 +126,9 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
     /* FCM upstream should only have one JSON object per message. */
   }
   /* Success, use jobj here. */
-  printf("%s\n", json_object_get_string(jobj));
+  printf("%s", json_object_get_string(jobj));
+  putc(LINE_TERMINATOR, stdout);
+  fflush(stdout);
 
   struct json_object *message_type = NULL;
   not_a_message = json_object_object_get_ex(jobj, "message_type", &message_type);
@@ -305,6 +308,7 @@ int command_options(int argc, char **argv)
     */
     static struct option long_options[] =
     {
+      {"null", no_argument, 0, 'Z'},
       {"config", required_argument, 0, 1001},
       {"verbose", no_argument, 0, 'v'},
       {"help", no_argument, 0, 'h'},
@@ -312,7 +316,7 @@ int command_options(int argc, char **argv)
     };
 
     int option_index = 0;
-    c = getopt_long(argc, argv, "hv", long_options, &option_index);
+    c = getopt_long(argc, argv, "Zhv", long_options, &option_index);
     if (c == -1)
     {
       break;
@@ -330,14 +334,19 @@ int command_options(int argc, char **argv)
       case 1001:
         CONFIG_FILE = optarg;
         break;
+      case 'Z':
+        LINE_TERMINATOR = '\0';
+        break;
       case 'h':
         fprintf(stderr, "Usage: %s [options]\n", argv[0]);
         fprintf(stderr, "Options:\n");
         fprintf(stderr, "  --config <file>\n");
         fprintf(stderr, "    Path to configuration file.\n");
-        fprintf(stderr, "  --verbose\n");
+        fprintf(stderr, "  -Z, --null\n");
+        fprintf(stderr, "    Separate lines with NUL instead of new line character.\n");
+        fprintf(stderr, "  -v, --verbose\n");
         fprintf(stderr, "    Use DEBUG level of libstrophe logging.\n");
-        fprintf(stderr, "  --help\n");
+        fprintf(stderr, "  -h, --help\n");
         fprintf(stderr, "    Display this information.\n");
         exit(0);
         break;
