@@ -8,13 +8,9 @@
 **  or implied.
 **
 ** This program is licensed under the MIT licence.
-
-/* simple bot example
 **
-** This program is based on an example provided to libstrophe
+** This program is based on bot.c, an example provided to libstrophe
 ** by Matthew Wild <mwild1@gmail.com>.
-**
-** This bot responds to basic messages and iq version requests.
 */
 
 /* Standard Libraries */
@@ -26,7 +22,7 @@
 #include <strophe.h>
 /* libconfig */
 #include <libconfig.h>
-/* cJSON */
+/* libjson-c */
 #include <json-c/json.h>
 
 char *CONFIG_FILE = "";
