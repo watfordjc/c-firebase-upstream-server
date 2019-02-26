@@ -27,6 +27,7 @@
 
 char *CONFIG_FILE = "";
 char LINE_TERMINATOR = '\n';
+int use_record_separator = 0;
 
 int max_logins = 1;
 struct config_settings *logins[1];
@@ -126,6 +127,9 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
     /* FCM upstream should only have one JSON object per message. */
   }
   /* Success, use jobj here. */
+  if (use_record_separator == 1) {
+    putc(0x1e, stdout);
+  }
   printf("%s", json_object_get_string(jobj));
   putc(LINE_TERMINATOR, stdout);
   fflush(stdout);
@@ -310,6 +314,7 @@ int command_options(int argc, char **argv)
     {
       {"null", no_argument, 0, 'Z'},
       {"config", required_argument, 0, 1001},
+      {"seq", no_argument, 0, 1002},
       {"verbose", no_argument, 0, 'v'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}
@@ -334,6 +339,9 @@ int command_options(int argc, char **argv)
       case 1001:
         CONFIG_FILE = optarg;
         break;
+      case 1002:
+        use_record_separator = 1;
+        break;
       case 'Z':
         LINE_TERMINATOR = '\0';
         break;
@@ -344,6 +352,8 @@ int command_options(int argc, char **argv)
         fprintf(stderr, "    Path to configuration file.\n");
         fprintf(stderr, "  -Z, --null\n");
         fprintf(stderr, "    Separate lines with NUL instead of new line character.\n");
+        fprintf(stderr, "  --seq\n");
+        fprintf(stderr, "    Use application/json-seq output.\n");
         fprintf(stderr, "  -v, --verbose\n");
         fprintf(stderr, "    Use DEBUG level of libstrophe logging.\n");
         fprintf(stderr, "  -h, --help\n");
