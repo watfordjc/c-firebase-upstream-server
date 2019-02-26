@@ -155,14 +155,14 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
 
     struct json_object *from = NULL;
     json_object_object_get_ex(jobj, "from", &from);
-    json_object_object_add(ack, "to", from);
+    json_object_object_add(ack, "to", json_object_get(from));
 
     struct json_object *message_id = NULL;
     json_object_object_get_ex(jobj, "message_id", &message_id);
-    json_object_object_add(ack, "message_id", message_id);
+    json_object_object_add(ack, "message_id", json_object_get(message_id));
 
     struct json_object *message_reply_type = json_object_new_string("ack");
-    json_object_object_add(ack, "message_type", message_reply_type);
+    json_object_object_add(ack, "message_type", json_object_get(message_reply_type));
 
     reply_message = xmpp_stanza_new(ctx);
     xmpp_stanza_set_name(reply_message, "message");
