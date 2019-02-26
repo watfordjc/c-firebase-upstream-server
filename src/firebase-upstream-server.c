@@ -28,6 +28,7 @@
 char *CONFIG_FILE = "";
 char LINE_TERMINATOR = '\n';
 int use_record_separator = 0;
+int use_length_prefix = 0;
 
 int max_logins = 1;
 struct config_settings *logins[1];
@@ -129,9 +130,13 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   /* Success, use jobj here. */
   if (use_record_separator == 1) {
     putc(0x1e, stdout);
+  } else if (use_length_prefix == 1) {
+    printf("%d", (int) strlen(json_object_get_string(jobj)));
   }
   printf("%s", json_object_get_string(jobj));
-  putc(LINE_TERMINATOR, stdout);
+  if (use_length_prefix == 0) {
+    putc(LINE_TERMINATOR, stdout);
+  }
   fflush(stdout);
 
   struct json_object *message_type = NULL;
@@ -315,6 +320,7 @@ int command_options(int argc, char **argv)
       {"null", no_argument, 0, 'Z'},
       {"config", required_argument, 0, 1001},
       {"seq", no_argument, 0, 1002},
+      {"len-prefixed", no_argument, &use_length_prefix, 1},
       {"verbose", no_argument, 0, 'v'},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}
@@ -352,6 +358,8 @@ int command_options(int argc, char **argv)
         fprintf(stderr, "    Path to configuration file.\n");
         fprintf(stderr, "  -Z, --null\n");
         fprintf(stderr, "    Separate lines with NUL instead of new line character.\n");
+        fprintf(stderr, "  --len-prefixed\n");
+        fprintf(stderr, "    Use length-prefixed JSON output.\n");
         fprintf(stderr, "  --seq\n");
         fprintf(stderr, "    Use application/json-seq output.\n");
         fprintf(stderr, "  -v, --verbose\n");
