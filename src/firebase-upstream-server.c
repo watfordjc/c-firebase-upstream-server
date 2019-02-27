@@ -67,7 +67,7 @@ const char *get_config_string(config_setting_t *setting, char *name);
 long get_tls_flags(const char *tls);
 unsigned short get_port(int port);
 
-void servers_iterate();
+void servers_iterate(void);
 void logins_iterate(int serverInt, struct config_settings server_login, struct config_setting_t *server_element);
 
 /* OpenSSL function declarations for cleanup */
@@ -91,7 +91,11 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   xmpp_ctx_t *ctx = (xmpp_ctx_t*)userdata;
   xmpp_stanza_t *gcm, *reply_message, *reply_gcm, *reply_text;
   char *intext;
+  struct json_tokener *tok;
+  json_object *jobj, *message_type, *control_type, *ack, *from, *message_id, *message_reply_type;
+  enum json_tokener_error jerr;
   json_bool not_a_message;
+  int stringlen;
 
   gcm = xmpp_stanza_get_child_by_name(stanza, "gcm");
   if (gcm == NULL) {
@@ -100,10 +104,9 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
 
   intext = xmpp_stanza_get_text(gcm);
 
-  struct json_tokener *tok = json_tokener_new();
-  json_object *jobj = NULL;
-  int stringlen = 0;
-  enum json_tokener_error jerr;
+  tok = json_tokener_new();
+  jobj = NULL;
+  stringlen = 0;
   do
   {
     stringlen = strlen(intext);
@@ -142,13 +145,13 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   }
   fflush(stdout);
 
-  struct json_object *message_type = NULL;
+  message_type = NULL;
   not_a_message = json_object_object_get_ex(jobj, "message_type", &message_type);
   if (not_a_message == TRUE) {
     fprintf(stderr, "from_fcm: This is a not a message, it is a %s\n", json_object_get_string(message_type));
     if (strcmp("control", json_object_get_string(message_type)) == 0) {
       /* FCM control message, checkk control_type */
-      struct json_object *control_type = NULL;
+      control_type = NULL;
       json_object_object_get_ex(jobj, "control_type", &control_type);
       /* If control type is CONNECTION_DRAINING, announce to stderr */
       if (strcmp("CONNECTION_DRAINING", json_object_get_string(control_type)) == 0) {
@@ -159,17 +162,17 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   } else {
     fprintf(stderr, "from_fcm: This is a message.\n");
 
-    struct json_object *ack = json_object_new_object();
+    ack = json_object_new_object();
 
-    struct json_object *from = NULL;
+    from = NULL;
     json_object_object_get_ex(jobj, "from", &from);
     json_object_object_add(ack, "to", json_object_get(from));
 
-    struct json_object *message_id = NULL;
+    message_id = NULL;
     json_object_object_get_ex(jobj, "message_id", &message_id);
     json_object_object_add(ack, "message_id", json_object_get(message_id));
 
-    struct json_object *message_reply_type = json_object_new_string("ack");
+    message_reply_type = json_object_new_string("ack");
     json_object_object_add(ack, "message_type", json_object_get(message_reply_type));
 
     reply_message = xmpp_stanza_new(ctx);
@@ -211,7 +214,6 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
   xmpp_ctx_t *ctx = (xmpp_ctx_t *)userdata;
 
   if (status == XMPP_CONN_CONNECT) {
-    xmpp_stanza_t* pres;
     fprintf(stderr, "DEBUG: CONNECTED\n");
     xmpp_handler_add(conn, fcm_upstream_handler, "google:mobile:data", "message", NULL, ctx);
 
@@ -223,6 +225,12 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
 
 int main(int argc, char **argv)
 {
+  struct config_settings *loginPtr;
+  struct config_settings login;
+  xmpp_ctx_t *ctx;
+  xmpp_conn_t *conn;
+  xmpp_log_t *log;
+
   #ifdef BE_VERBOSE
   verbose = 1;
   #endif
@@ -242,16 +250,8 @@ int main(int argc, char **argv)
     close_config();
     exit(1);
   }
-  struct config_settings *loginPtr = logins[0];
-  struct config_settings login = *loginPtr;
-
-  xmpp_ctx_t *ctx;
-  xmpp_conn_t *conn;
-  xmpp_log_t *log;
-  const char *jid = login.jid;
-  const char *pass = login.pass;
-  const char *host = login.host;
-  unsigned short port = login.port;
+  loginPtr = logins[0];
+  login = *loginPtr;
 
   /* init library */
   xmpp_initialize();
@@ -267,11 +267,11 @@ int main(int argc, char **argv)
   xmpp_conn_set_flags(conn, login.flags);
 
   /* setup authentication information */
-  xmpp_conn_set_jid(conn, jid);
-  xmpp_conn_set_pass(conn, pass);
+  xmpp_conn_set_jid(conn, login.jid);
+  xmpp_conn_set_pass(conn, login.pass);
 
   /* initiate connection */
-  xmpp_connect_client(conn, host, port, conn_handler, ctx);
+  xmpp_connect_client(conn, login.host, login.port, conn_handler, ctx);
 
   /* enter the event loop -
   our connect handler will trigger an exit */
@@ -380,10 +380,12 @@ int command_options(int argc, char **argv)
         abort();
     }
   }
+  return 0;
 }
 
 void open_config()
 {
+  int loaded_config;
   if (strlen(CONFIG_FILE) == 0)
   {
     fprintf(stderr, "conf: No configuration file specified.\n");
@@ -393,7 +395,7 @@ void open_config()
   config = &conf;
   config_init(config);
 
-  int loaded_config = config_read_file(config, CONFIG_FILE);
+  loaded_config = config_read_file(config, CONFIG_FILE);
   if (loaded_config != 1)
   {
     fprintf(stderr, "conf: Error reading config file %s. Error on line %d: %s\n", config_error_file(config), config_error_line(config), config_error_text(config));
@@ -403,17 +405,18 @@ void open_config()
 
 void close_config()
 {
+  struct config_settings *loginPtr;
   /* Cleanup before config_destroy() */
   int i;
   for (i = 0; i < logins_count; i++)
   {
-    struct config_settings *loginPtr = logins[i];
+    loginPtr = logins[i];
     free(loginPtr);
   }
   config_destroy(config);
 }
 
-void servers_iterate(struct config_settings *logins[], int *logins_count, int max_logins)
+void servers_iterate(void)
 {
   /* Loop through servers */
   struct config_setting_t conf_servers;
@@ -427,16 +430,15 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
   for (i = 0; i < server_count; i++)
   {
     struct config_setting_t *server_element = config_setting_get_elem(config_servers, i);
+    struct config_settings server_login = {0};
+    int server_enabled;
     if (server_element == NULL)
     {
       continue;
     }
-    struct config_settings server_login = {0};
     server_login.pointer = server_element;
 
-    struct config_setting_t *server_setting = NULL;
-
-    int server_enabled = get_config_bool(server_element, "enabled");
+    server_enabled = get_config_bool(server_element, "enabled");
     if (server_enabled == 0)
     {
       fprintf(stderr, "conf: Server %d is not enabled.\n", i);
@@ -446,10 +448,8 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
     {
       server_login.enabled = server_enabled;
       server_login.host = get_config_string(server_element, "host");
-      const char *server_tls = get_config_string(server_element, "tls");
-      server_login.flags = get_tls_flags(server_tls);
-      int server_port = get_config_int(server_element, "port");
-      server_login.port = get_port(server_port);
+      server_login.flags = get_tls_flags(get_config_string(server_element, "tls"));
+      server_login.port = get_port(get_config_int(server_element, "port"));
 
       #ifdef BE_VERBOSE
       fprintf(stderr, "servers[%d].enabled = %d\n", i, server_login.enabled);
@@ -470,16 +470,18 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
   */
 
   struct config_setting_t *conf_logins = config_setting_lookup(server_element, "logins");
+  int login_count, i;
+  struct config_settings *loginPtr;
   if (conf_logins == NULL)
   {
     fprintf(stderr, "conf: No logins defined for server %d.\n", serverNumber);
   }
-  int login_count = config_setting_length(conf_logins);
+  login_count = config_setting_length(conf_logins);
   #ifdef BE_VERBOSE
   fprintf(stderr, "conf: Number of logins for server %d: %d\n", serverNumber, login_count);
   #endif
 
-  int i;
+
   for (i = 0; i < login_count; i++)
   {
     struct config_setting_t *login_element = config_setting_get_elem(conf_logins, i);
@@ -488,7 +490,7 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
       continue;
     }
 
-    struct config_settings *loginPtr = NULL;
+    loginPtr = NULL;
     loginPtr = (struct config_settings *) malloc(sizeof(struct config_settings));
     #ifdef BE_VERBOSE
     fprintf(stderr, "Pointer loginPtr: %p\n", loginPtr);
