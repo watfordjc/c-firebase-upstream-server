@@ -59,8 +59,10 @@ int get_config_int(config_setting_t *setting, char *name);
 int get_config_bool(config_setting_t *setting, char *name);
 const char *get_config_string(config_setting_t *setting, char *name);
 
-/* Uncomment if libconfig < v1.5 - renamed function */
-/* #define config_setting_lookup config_lookup_from */
+/* libconfig < v1.5 - renamed function */
+#if (LIBCONFIG_VER_MAJOR <= 1) && (LIBCONFIG_VER_MINOR <= 4)
+#define config_setting_lookup config_lookup_from
+#endif
 
 long get_tls_flags(const char *tls);
 unsigned short get_port(int port);
