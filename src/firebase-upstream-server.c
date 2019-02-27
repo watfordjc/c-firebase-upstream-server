@@ -86,6 +86,20 @@ void ERR_remove_state();
 
 int verbose;
 
+void print_formatted_json(json_object *jobj)
+{
+  if (use_record_separator == 1 && use_concat_output == 0) {
+    putc(0x1e, stdout);
+  } else if (use_length_prefix == 1 && use_concat_output == 0) {
+    printf("%d", (int) strlen(json_object_get_string(jobj)));
+  }
+  printf("%s", json_object_get_string(jobj));
+  if (use_length_prefix == 0 && use_concat_output == 0) {
+    putc(LINE_TERMINATOR, stdout);
+  }
+  fflush(stdout);
+}
+
 int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
   xmpp_ctx_t *ctx = (xmpp_ctx_t*)userdata;
@@ -134,16 +148,7 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
     /* FCM upstream should only have one JSON object per message. */
   }
   /* Success, use jobj here. */
-  if (use_record_separator == 1 && use_concat_output == 0) {
-    putc(0x1e, stdout);
-  } else if (use_length_prefix == 1 && use_concat_output == 0) {
-    printf("%d", (int) strlen(json_object_get_string(jobj)));
-  }
-  printf("%s", json_object_get_string(jobj));
-  if (use_length_prefix == 0 && use_concat_output == 0) {
-    putc(LINE_TERMINATOR, stdout);
-  }
-  fflush(stdout);
+  print_formatted_json(jobj);
 
   message_type = NULL;
   not_a_message = json_object_object_get_ex(jobj, "message_type", &message_type);
