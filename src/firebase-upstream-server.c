@@ -404,7 +404,8 @@ void open_config()
 void close_config()
 {
   /* Cleanup before config_destroy() */
-  for (int i = 0; i < logins_count; i++)
+  int i;
+  for (i = 0; i < logins_count; i++)
   {
     struct config_settings *loginPtr = logins[i];
     free(loginPtr);
@@ -422,7 +423,8 @@ void servers_iterate(struct config_settings *logins[], int *logins_count, int ma
   fprintf(stderr, "conf: Number of servers: %d\n", server_count);
   #endif
 
-  for (int i = 0; i < server_count; i++)
+  int i;
+  for (i = 0; i < server_count; i++)
   {
     struct config_setting_t *server_element = config_setting_get_elem(config_servers, i);
     if (server_element == NULL)
@@ -477,7 +479,8 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
   fprintf(stderr, "conf: Number of logins for server %d: %d\n", serverNumber, login_count);
   #endif
 
-  for (int i = 0; i < login_count; i++)
+  int i;
+  for (i = 0; i < login_count; i++)
   {
     struct config_setting_t *login_element = config_setting_get_elem(conf_logins, i);
     if (login_element == NULL)
