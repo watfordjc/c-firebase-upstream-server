@@ -100,13 +100,50 @@ void print_formatted_json(json_object *jobj)
   fflush(stdout);
 }
 
+void send_ack(xmpp_ctx_t *ctx, xmpp_conn_t * const conn, json_object *jobj)
+{
+  json_object *ack = json_object_new_object();
+  json_object *from = NULL;
+  json_object *message_id = NULL;
+  json_object *message_reply_type = json_object_new_string("ack");
+  xmpp_stanza_t *reply_message = xmpp_stanza_new(ctx);
+  xmpp_stanza_t *reply_gcm = xmpp_stanza_new(ctx);
+  xmpp_stanza_t *reply_text = xmpp_stanza_new(ctx);
+
+  json_object_object_get_ex(jobj, "from", &from);
+  json_object_object_add(ack, "to", json_object_get(from));
+
+  json_object_object_get_ex(jobj, "message_id", &message_id);
+  json_object_object_add(ack, "message_id", json_object_get(message_id));
+
+  json_object_object_add(ack, "message_type", json_object_get(message_reply_type));
+
+  xmpp_stanza_set_name(reply_message, "message");
+  xmpp_stanza_set_attribute(reply_message, "id", "");
+
+  xmpp_stanza_set_name(reply_gcm, "gcm");
+  xmpp_stanza_set_ns(reply_gcm, "google:mobile:data");
+  xmpp_stanza_add_child(reply_message, reply_gcm);
+  xmpp_stanza_release(reply_gcm);
+
+  xmpp_stanza_set_text(reply_text, json_object_get_string(ack));
+  xmpp_stanza_add_child(reply_gcm, reply_text);
+  xmpp_stanza_release(reply_text);
+
+  xmpp_send(conn, reply_message);
+  xmpp_stanza_release(reply_message);
+
+  json_object_put(message_reply_type);
+  json_object_put(ack);
+}
+
 int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza, void * const userdata)
 {
   xmpp_ctx_t *ctx = (xmpp_ctx_t*)userdata;
-  xmpp_stanza_t *gcm, *reply_message, *reply_gcm, *reply_text;
+  xmpp_stanza_t *gcm;
   char *intext;
   struct json_tokener *tok;
-  json_object *jobj, *message_type, *control_type, *ack, *from, *message_id, *message_reply_type;
+  json_object *jobj, *message_type, *control_type;
   enum json_tokener_error jerr;
   json_bool not_a_message;
   int stringlen;
@@ -167,39 +204,8 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
   } else {
     fprintf(stderr, "from_fcm: This is a message.\n");
 
-    ack = json_object_new_object();
+    send_ack(ctx, conn, jobj);
 
-    from = NULL;
-    json_object_object_get_ex(jobj, "from", &from);
-    json_object_object_add(ack, "to", json_object_get(from));
-
-    message_id = NULL;
-    json_object_object_get_ex(jobj, "message_id", &message_id);
-    json_object_object_add(ack, "message_id", json_object_get(message_id));
-
-    message_reply_type = json_object_new_string("ack");
-    json_object_object_add(ack, "message_type", json_object_get(message_reply_type));
-
-    reply_message = xmpp_stanza_new(ctx);
-    xmpp_stanza_set_name(reply_message, "message");
-    xmpp_stanza_set_attribute(reply_message, "id", "");
-
-    reply_gcm = xmpp_stanza_new(ctx);
-    xmpp_stanza_set_name(reply_gcm, "gcm");
-    xmpp_stanza_set_ns(reply_gcm, "google:mobile:data");
-    xmpp_stanza_add_child(reply_message, reply_gcm);
-    xmpp_stanza_release(reply_gcm);
-
-    reply_text = xmpp_stanza_new(ctx);
-    xmpp_stanza_set_text(reply_text, json_object_get_string(ack));
-    xmpp_stanza_add_child(reply_gcm, reply_text);
-    xmpp_stanza_release(reply_text);
-
-    xmpp_send(conn, reply_message);
-    xmpp_stanza_release(reply_message);
-
-    json_object_put(message_reply_type);
-    json_object_put(ack);
     json_object_put(jobj);
 
   }
@@ -427,11 +433,12 @@ void servers_iterate(void)
   struct config_setting_t conf_servers;
   struct config_setting_t *config_servers = &conf_servers;
   int server_count = get_root_element_count(config, "servers", config_servers);
+  int i;
+
   #ifdef BE_VERBOSE
   fprintf(stderr, "conf: Number of servers: %d\n", server_count);
   #endif
 
-  int i;
   for (i = 0; i < server_count; i++)
   {
     struct config_setting_t *server_element = config_setting_get_elem(config_servers, i);
@@ -498,7 +505,7 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     loginPtr = NULL;
     loginPtr = (struct config_settings *) malloc(sizeof(struct config_settings));
     #ifdef BE_VERBOSE
-    fprintf(stderr, "Pointer loginPtr: %p\n", loginPtr);
+    fprintf(stderr, "Pointer loginPtr: %p\n", (void *) loginPtr);
     #endif
     memcpy(loginPtr, &server_login, sizeof(struct config_settings));
     loginPtr->pointer = login_element;
@@ -508,7 +515,7 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     #ifdef BE_VERBOSE
     fprintf(stderr, "servers[%d].logins[%d].jid length = %d\n", serverNumber, i, (int) strlen(loginPtr->jid));
     fprintf(stderr, "servers[%d].logins[%d].pass length = %d\n", serverNumber, i, (int) strlen(loginPtr->pass));
-    fprintf(stderr, "servers[%d].logins[%d].pointer = %p\n", serverNumber, i, loginPtr->pointer);
+    fprintf(stderr, "servers[%d].logins[%d].pointer = %p\n", serverNumber, i, (void *) loginPtr->pointer);
     #endif
 
     if (logins_count < max_logins)
