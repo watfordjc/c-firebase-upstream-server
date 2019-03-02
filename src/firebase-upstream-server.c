@@ -88,15 +88,25 @@ int verbose;
 
 void print_formatted_json(json_object *jobj)
 {
-  if (use_record_separator == 1 && use_concat_output == 0) {
-    putc(0x1e, stdout);
-  } else if (use_length_prefix == 1 && use_concat_output == 0) {
-    printf("%d", (int) strlen(json_object_get_string(jobj)));
+  /* Concatenated: No start character, string, no end character */
+  if (use_concat_output == 1) {
+    fprintf(stdout, "%s", json_object_get_string(jobj));
   }
-  printf("%s", json_object_get_string(jobj));
-  if (use_length_prefix == 0 && use_concat_output == 0) {
-    putc(LINE_TERMINATOR, stdout);
+  /* Record-separated: Start character, string, end character */
+  else if (use_record_separator == 1) {
+    fprintf(stdout, "%c%s%c", 0x1e, json_object_get_string(jobj), LINE_TERMINATOR);
   }
+  /* Length-prefixed: Start integer, string, no end character */
+  else if (use_length_prefix == 1) {
+    fprintf(stdout, "%d%s", (int) strlen(json_object_get_string(jobj)), json_object_get_string(jobj));
+  }
+  /* Line-delimited: No start character, string, end character */
+  /* Nul-terminated: No start character, string, end character */
+  /* else if (use_concat_output == 0 && use_record_separator == 0 && use_length_prefix == 0) { */
+  else {
+    fprintf(stdout, "%s%c", json_object_get_string(jobj), LINE_TERMINATOR);
+  }
+  /* Flush output */
   fflush(stdout);
 }
 
