@@ -509,6 +509,7 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
   if (conf_logins == NULL)
   {
     fprintf(stderr, "conf: No logins defined for server %d.\n", serverNumber);
+    return;
   }
   login_count = config_setting_length(conf_logins);
   #ifdef BE_VERBOSE
