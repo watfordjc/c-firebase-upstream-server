@@ -34,9 +34,9 @@ int use_concat_output = 0;
 
 /* Limit number of simultaneous outbound connections to 1 */
 /* max_logins should equal the size of the arrays logins[] and connections[] */
-int max_logins = 1;
-struct config_settings *logins[1];
-xmpp_conn_t *connections[1] = {NULL};
+#define MAX_LOGINS 1
+struct config_settings *logins[MAX_LOGINS];
+xmpp_conn_t *connections[MAX_LOGINS] = {NULL};
 
 int logins_count = 0;
 
@@ -540,15 +540,15 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
     fprintf(stderr, "servers[%d].logins[%d].pointer = %p\n", serverNumber, i, (void *) loginPtr->pointer);
     #endif
 
-    if (logins_count < max_logins)
+    if (logins_count < MAX_LOGINS)
     {
       logins[logins_count] = loginPtr;
       logins_count++;
     }
     else
     {
-      fprintf(stderr, "conf: Compiled with only %d maximum logins, configuration file contains at least %d.\n", max_logins, logins_count+1);
-      fprintf(stderr, "conf: Please modify 'int max_logins = %d' in source code and recompile.\n", max_logins);
+      fprintf(stderr, "conf: Compiled with only %d maximum logins, configuration file contains at least %d.\n", MAX_LOGINS, logins_count+1);
+      fprintf(stderr, "conf: Please modify '#define MAX_LOGINS %d' in source code and recompile.\n", MAX_LOGINS);
       config_destroy(config);
       exit(1);
     }
@@ -720,7 +720,7 @@ unsigned short get_port(int port)
 void handle_sigint()
 {
   int i;
-  for (i = 0; i < max_logins; i++) {
+  for (i = 0; i < MAX_LOGINS; i++) {
     if (connections[i] != NULL) {
       xmpp_disconnect(connections[i]);
     }
