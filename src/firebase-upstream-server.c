@@ -388,7 +388,11 @@ int command_options(int argc, char **argv)
       case 'Z':
         LINE_TERMINATOR = '\0';
         break;
+      case 'v':
+        verbose = 1;
+        break;
       case 'h':
+      default:
         fprintf(stderr, "Usage: %s [options]\n", argv[0]);
         fprintf(stderr, "Options:\n");
         fprintf(stderr, "  --config <file>\n");
@@ -407,13 +411,6 @@ int command_options(int argc, char **argv)
         fprintf(stderr, "    Display this information.\n");
         exit(0);
         break;
-      case 'v':
-        verbose = 1;
-        break;
-      default:
-        /* TODO: Ensure all command options are listed and functional. */
-        fprintf(stderr, "Command options fall through.\n");
-        abort();
     }
   }
   return 0;
