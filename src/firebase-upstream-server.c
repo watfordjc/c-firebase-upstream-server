@@ -258,6 +258,8 @@ int main(int argc, char **argv)
   xmpp_conn_t *conn;
   xmpp_log_t *log;
 
+  /* Ignore SIGPIPE */
+  signal(SIGPIPE, SIG_IGN);
   /* Close connections on SIGINT */
   signal(SIGINT, handle_sigint);
 
