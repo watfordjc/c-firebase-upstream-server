@@ -118,37 +118,51 @@ void print_formatted_json(json_object *jobj)
 
 void send_ack(xmpp_ctx_t *ctx, xmpp_conn_t * const conn, json_object *jobj)
 {
-  json_object *ack = json_object_new_object();
+  /* Initialise new JSON objects */
   json_object *from = NULL;
   json_object *message_id = NULL;
-  json_object *message_reply_type = json_object_new_string("ack");
+  /* Initialise new XMPP elements */
   xmpp_stanza_t *reply_message = xmpp_stanza_new(ctx);
   xmpp_stanza_t *reply_gcm = xmpp_stanza_new(ctx);
   xmpp_stanza_t *reply_text = xmpp_stanza_new(ctx);
+  /* Create a new JSON object */
+  json_object *ack = json_object_new_object();
+  /* Create a new JSON string value of "ack" */
+  json_object *message_reply_type = json_object_new_string("ack");
 
+  /* Get "from": in inbound message, and add to *ack as "to": */
   json_object_object_get_ex(jobj, "from", &from);
   json_object_object_add(ack, "to", json_object_get(from));
 
+  /* Get "message_id": from inbound message and add to *ack */
   json_object_object_get_ex(jobj, "message_id", &message_id);
   json_object_object_add(ack, "message_id", json_object_get(message_id));
 
+  /* Add JSON string "ack" to *ack as new key "message_type": */
   json_object_object_add(ack, "message_type", json_object_get(message_reply_type));
 
+  /* Create <message id=""></message> */
   xmpp_stanza_set_name(reply_message, "message");
   xmpp_stanza_set_attribute(reply_message, "id", "");
 
+  /* Create <gcm xmlns="google:mobile:data"></gcm>  */
   xmpp_stanza_set_name(reply_gcm, "gcm");
   xmpp_stanza_set_ns(reply_gcm, "google:mobile:data");
+  /* Insert <gcm></gcm> inside <message></message> and then free */
   xmpp_stanza_add_child(reply_message, reply_gcm);
   xmpp_stanza_release(reply_gcm);
 
+  /* Convert JSON into XMPP text (for <element>text</element>) */
   xmpp_stanza_set_text(reply_text, json_object_get_string(ack));
+  /* Insert JSON (XMPP text) inside <gcm></gcm> and then free */
   xmpp_stanza_add_child(reply_gcm, reply_text);
   xmpp_stanza_release(reply_text);
 
+  /* Send ack */
   xmpp_send(conn, reply_message);
+  /* Free <message></message> */
   xmpp_stanza_release(reply_message);
-
+  /* Free created JSON objects */
   json_object_put(message_reply_type);
   json_object_put(ack);
 }
