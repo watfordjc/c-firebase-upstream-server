@@ -19,6 +19,8 @@
 #include <string.h>
 #include <getopt.h>
 #include <signal.h>
+#include <pthread.h>
+#include <unistd.h>
 /* libstrophe */
 #include <strophe.h>
 /* libconfig */
@@ -35,10 +37,25 @@ int use_concat_output = 0;
 /* Limit number of simultaneous outbound connections to 1 */
 /* max_logins should equal the size of the arrays logins[] and connections[] */
 #define MAX_LOGINS 1
-struct config_settings *logins[MAX_LOGINS];
-xmpp_conn_t *connections[MAX_LOGINS] = {NULL};
+struct config_settings *logins[MAX_LOGINS] = {0};
+
+
 
 int logins_count = 0;
+int thread_count = 0;
+
+struct connection_pair
+{
+  int thread_draining[2];
+  pthread_mutex_t mutex[2];
+  pthread_cond_t draining[2];
+  pthread_t *thread[2];
+  int thread_return[2];
+  xmpp_conn_t *connections[2];
+  xmpp_ctx_t *ctx[2];
+  struct config_settings *login;
+  xmpp_log_t *log;
+};
 
 struct config_settings
 {
@@ -49,9 +66,21 @@ struct config_settings
   const char *jid;
   const char *pass;
   struct config_setting_t *pointer;
+  struct connection_pair *pairs;
 };
 struct config_t conf;
 struct config_t *config;
+
+/* Map threads to connection pairs and location in a connection_pair->thread[] */
+struct threadmap
+{
+  pthread_t thread;
+  struct connection_pair *my_pair;
+  int loc;
+  int id;
+};
+/* Array of threadmaps */
+struct threadmap *all_threads;
 
 int command_options(int argc, char **argv);
 
@@ -89,8 +118,30 @@ int ERR_free_strings();
 void EVP_cleanup();
 void CRYPTO_cleanup_all_ex_data();
 void ERR_remove_state();
+void ERR_remove_thread_state();
 
 int verbose;
+int shutting_down = 0;
+
+void connection_draining(pthread_t thread, int is_draining) {
+  int i;
+  int thread_id, *thread_draining;
+  struct connection_pair *my_pair;
+  struct threadmap *my_threadmap;
+  for (i = 0; i < thread_count; i++) {
+    if (pthread_equal(all_threads[i].thread, thread)) {
+      my_threadmap = &all_threads[i];
+      my_pair = my_threadmap->my_pair;
+      thread_id = my_threadmap->loc;
+      pthread_mutex_lock(&my_pair->mutex[thread_id]);
+      thread_draining = my_pair->thread_draining;
+      thread_draining[thread_id] = is_draining;
+      pthread_cond_signal(&my_pair->draining[thread_id]);
+      pthread_mutex_unlock(&my_pair->mutex[thread_id]);
+      break;
+    }
+  }
+}
 
 void print_formatted_json(json_object *jobj)
 {
@@ -225,9 +276,11 @@ int fcm_upstream_handler(xmpp_conn_t * const conn, xmpp_stanza_t * const stanza,
       /* FCM control message, check control_type */
       control_type = NULL;
       json_object_object_get_ex(jobj, "control_type", &control_type);
-      /* If control type is CONNECTION_DRAINING, announce to stderr */
+      /* If control type is CONNECTION_DRAINING, activate other thread */
       if (strcmp("CONNECTION_DRAINING", json_object_get_string(control_type)) == 0) {
         fprintf(stderr, "DEBUG: CONNECTION_DRAINING\n");
+        /* This thread's connection is draining */
+        connection_draining(pthread_self(), 1);
       }
     }
     json_object_put(jobj);
@@ -252,25 +305,206 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
   const int error, xmpp_stream_error_t * const stream_error,
   void * const userdata)
 {
+  int reconnect_status = -1;
+  int reconnect_delay = 1;
+  int i;
   xmpp_ctx_t *ctx = (xmpp_ctx_t *)userdata;
+  struct threadmap *my_threadmap;
+  pthread_t thread;
 
   if (status == XMPP_CONN_CONNECT) {
     fprintf(stderr, "DEBUG: CONNECTED\n");
-    xmpp_handler_add(conn, fcm_upstream_handler, "google:mobile:data", "message", NULL, ctx);
+    return;
+  }
 
-  } else {
-    fprintf(stderr, "DEBUG: DISCONNECTED\n");
+  /* We're not connected */
+  fprintf(stderr, "DEBUG: DISCONNECTED\n");
+  /* Are we shutting down? */
+  if (shutting_down == 1) {
     xmpp_stop(ctx);
+    return;
+  }
+
+  /* We're not shutting down, get threadmap */
+  thread = pthread_self();
+  for (i = 0; i < thread_count; i++) {
+    if (pthread_equal(all_threads[i].thread, thread)) {
+      my_threadmap = &all_threads[i];
+    }
+  }
+
+  /* Check if we're connection draining */
+  if (my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
+    xmpp_stop(ctx);
+    return;
+  }
+
+  /* We're not connection draining, attempt reconnection until successful */
+  while (reconnect_status != 0) {
+    /* Double reconnect delay each attempt until delay is 128 seconds */
+    if (reconnect_delay < 128) {
+      reconnect_delay *= 2;
+    }
+    /* Wait for reconnect delay */
+    sleep(reconnect_delay);
+    /* Attempt to reconnect */
+    reconnect_status = xmpp_connect_client(conn, my_threadmap->my_pair->login->host, my_threadmap->my_pair->login->port, conn_handler, userdata);
+  }
+}
+
+void thread_cleanup(void * ptr)
+{
+  struct threadmap *my_threadmap = (struct threadmap *) ptr;
+  /* cleanup OpenSSL */
+  FIPS_mode_set(0);
+  CRYPTO_set_locking_callback(NULL);
+  CRYPTO_set_id_callback(NULL);
+  SSL_COMP_free_compression_methods();
+  ENGINE_cleanup();
+  CONF_modules_free();
+  CONF_modules_unload();
+  COMP_zlib_cleanup();
+  ERR_free_strings();
+  EVP_cleanup();
+  CRYPTO_cleanup_all_ex_data();
+  ERR_remove_thread_state(NULL);
+
+  xmpp_conn_release(my_threadmap->my_pair->connections[my_threadmap->loc]);
+}
+
+void swap_thread(struct threadmap *my_threadmap, struct connection_pair *my_pair, pthread_t *tid, int thread_id, int other_thread) {
+  #ifdef BE_VERBOSE
+  /* Check all threads use same instance of struct */
+  printf("my_pair has pointer %p\n", (void *) my_pair);
+  /* Wait until other thread is connection draining */
+  printf("I am %d, waiting for %d to change status.\n", thread_id, other_thread);
+  #endif
+  while (my_pair->thread_draining[other_thread] == 0) {
+    pthread_cond_wait(&my_pair->draining[other_thread], &my_pair->mutex[other_thread]);
+  }
+  /* Do stuff needed here, but we're not using mutex for write lock, just waiting for value change */
+  pthread_mutex_unlock(&my_pair->mutex[other_thread]);
+  /* Do stuff that doesn't need a read/write lock here */
+  /* Other connection is draining, we need to connect */
+  #ifdef BE_VERBOSE
+  printf("I am %d, %d has changed to connection draining.\n", thread_id, other_thread);
+  #endif
+  xmpp_connect_client(my_pair->connections[thread_id], my_pair->login->host, my_pair->login->port, conn_handler, my_pair->ctx[thread_id]);
+  xmpp_run(my_pair->ctx[thread_id]);
+  #ifdef BE_VERBOSE
+  printf("I am %d (%lu)... disconnected.\n", thread_id, *tid);
+  #endif
+  /* Repeat forever */
+  pthread_cleanup_push(thread_cleanup, my_threadmap);
+  swap_thread(my_threadmap, my_pair, tid, thread_id, other_thread);
+  pthread_cleanup_pop(1);
+}
+
+void *create_connection(void * ptr)
+{
+  /* Convert void* to struct */
+  struct threadmap *my_threadmap = (struct threadmap *) ptr;
+  struct connection_pair *my_pair = my_threadmap->my_pair;
+  struct config_settings *login = my_pair->login;
+  int thread_id = my_threadmap->loc;
+  int other_thread;
+  pthread_t tid;
+  xmpp_conn_t *conn;
+
+  /* create a connection */
+  conn = xmpp_conn_new(my_pair->ctx[thread_id]);
+  /* store pointer to connection in array */
+  my_pair->connections[thread_id] = conn;
+  /* set TLS connection flags */
+  xmpp_conn_set_flags(conn, login->flags);
+
+  /* setup authentication information */
+  xmpp_conn_set_jid(conn, login->jid);
+  xmpp_conn_set_pass(conn, login->pass);
+
+  xmpp_handler_add(conn, fcm_upstream_handler, "google:mobile:data", "message", NULL, my_pair->ctx[thread_id]);
+
+  /* Get thread ID so it can be compared */
+  tid = pthread_self();
+  my_pair->thread[my_threadmap->loc] = &my_threadmap->thread;
+  /* The other thread in this connection pair isn't this thread */
+  if (thread_id == 0) {
+    other_thread = 1;
+  } else if (thread_id == 1) {
+    other_thread = 0;
+  }
+
+  /* On first run, only the primary thread should make a connection */
+  if (thread_id == 0)
+  {
+    /* initiate connection */
+    xmpp_connect_client(conn, login->host, login->port, conn_handler, my_pair->ctx[thread_id]);
+    /* enter the event loop -
+    our connect handler will trigger an exit */
+    xmpp_run(my_pair->ctx[thread_id]);
+    /* This thread is disconnected */
+    /* fcm_upstream_handler should've fired up other thread if draining*/
+    /* conn_handler should've attempted to reconnect indefinitely */
+  }
+  /* The secondary thread should wait until primary thread connection drains */
+  /* A disconnected primary thread should wait until secondary thread drains */
+  if (shutting_down != 1)
+  {
+    pthread_cleanup_push(thread_cleanup, my_threadmap);
+    swap_thread(my_threadmap, my_pair, &tid, thread_id, other_thread);
+    pthread_cleanup_pop(1);
+  }
+
+  /* cleanup OpenSSL */
+  FIPS_mode_set(0);
+  CRYPTO_set_locking_callback(NULL);
+  CRYPTO_set_id_callback(NULL);
+  SSL_COMP_free_compression_methods();
+  ENGINE_cleanup();
+  CONF_modules_free();
+  CONF_modules_unload();
+  COMP_zlib_cleanup();
+  ERR_free_strings();
+  EVP_cleanup();
+  CRYPTO_cleanup_all_ex_data();
+  ERR_remove_thread_state(NULL);
+
+  /* release our connection */
+  xmpp_conn_release(conn);
+
+  return NULL;
+}
+
+void create_connection_pair(struct connection_pair *my_pair, int first_thread)
+{
+  int i;
+  for (i = 0; i < 2; i++) {
+    pthread_mutex_init(&my_pair->mutex[i], NULL);
+    pthread_cond_init(&my_pair->draining[i], NULL);
+    my_pair->thread_draining[i] = 0;
+  }
+  for (i = 0; i < 2; i++) {
+    struct threadmap *my_threadmap = &all_threads[first_thread + i];
+    my_threadmap->my_pair = my_pair;
+    my_threadmap->loc = i;
+    my_pair->ctx[i] = xmpp_ctx_new(NULL, my_pair->log);
+    my_pair->thread_return[i] = pthread_create(&my_threadmap->thread, NULL, &create_connection, (void *) my_threadmap);
+    thread_count++;
+  }
+}
+
+void join_all_threads()
+{
+  int i;
+  for (i = 0; i < thread_count; i++) {
+      pthread_join(all_threads[i].thread, NULL);
   }
 }
 
 int main(int argc, char **argv)
 {
-  struct config_settings *loginPtr;
-  struct config_settings login;
-  xmpp_ctx_t *ctx;
-  xmpp_conn_t *conn;
   xmpp_log_t *log;
+  int i;
 
   /* Ignore SIGPIPE */
   signal(SIGPIPE, SIG_IGN);
@@ -289,6 +523,13 @@ int main(int argc, char **argv)
   * logins_iterate() populates *logins[].
   */
   servers_iterate();
+  all_threads = malloc(logins_count * 2 * sizeof(struct threadmap));
+  if (all_threads == NULL) {
+    fprintf(stderr, "conf: Unable to allocate memory.");
+    close_config();
+    exit(1);
+  }
+
 
   if (logins_count != 1)
   {
@@ -296,8 +537,6 @@ int main(int argc, char **argv)
     close_config();
     exit(1);
   }
-  loginPtr = logins[0];
-  login = *loginPtr;
 
   /* init library */
   xmpp_initialize();
@@ -305,50 +544,45 @@ int main(int argc, char **argv)
   /* create a context */
   log = verbose == 1 ? xmpp_get_default_logger(XMPP_LEVEL_DEBUG) : xmpp_get_default_logger(XMPP_LEVEL_INFO); /* pass NULL instead to silence output */
 
-  ctx = xmpp_ctx_new(NULL, log);
+  for (i = 0; i < logins_count; i++) {
+    struct connection_pair *new_pair;
+    struct config_settings *login;
+    new_pair = (struct connection_pair *) (malloc(sizeof(struct connection_pair) * 1));
 
-  /* create a connection */
-  conn = xmpp_conn_new(ctx);
-  /* store pointer to connection in array */
-  connections[0] = conn;
+    login = logins[i];
+    new_pair->login = login;
+    new_pair->log = log;
 
+    logins[i]->pairs = new_pair;
 
-  xmpp_conn_set_flags(conn, login.flags);
+    all_threads[i].my_pair = new_pair;
+    all_threads[i+1].my_pair = new_pair;
+    all_threads[i].id = i;
+    all_threads[i+1].id = i + 1;
+    all_threads[i].loc = 0;
+    all_threads[i+1].loc = 1;
+    create_connection_pair(new_pair, i);
+  }
 
-  /* setup authentication information */
-  xmpp_conn_set_jid(conn, login.jid);
-  xmpp_conn_set_pass(conn, login.pass);
-
-  /* initiate connection */
-  xmpp_connect_client(conn, login.host, login.port, conn_handler, ctx);
-
-  /* enter the event loop -
-  our connect handler will trigger an exit */
-  xmpp_run(ctx);
-
-  /* cleanup OpenSSL */
-  FIPS_mode_set(0);
-  CRYPTO_set_locking_callback(NULL);
-  CRYPTO_set_id_callback(NULL);
-  SSL_COMP_free_compression_methods();
-  ENGINE_cleanup();
-  CONF_modules_free();
-  CONF_modules_unload();
-  COMP_zlib_cleanup();
-  ERR_free_strings();
-  EVP_cleanup();
-  CRYPTO_cleanup_all_ex_data();
-
-  /* release our connection and context */
-  xmpp_conn_release(conn);
-  connections[0] = NULL;
-  xmpp_ctx_free(ctx);
+  for (i = 0; i < thread_count; i++) {
+    pthread_join(all_threads[i].thread, NULL);
+    /* Release our context */
+    xmpp_ctx_free(all_threads[i].my_pair->ctx[all_threads[i].loc]);
+  }
 
   /* cleanup OpenSSL (must do for every thread) */
   ERR_remove_state(0);
 
   /* final shutdown of the library */
   xmpp_shutdown();
+
+  /* Release connection pairs (connection_pair*) */
+  for (i = 0; i < logins_count; i++) {
+    free(all_threads[i*2].my_pair);
+  }
+
+  /* release *all_threads */
+  free(all_threads);
 
   /* close config file */
   close_config();
@@ -541,6 +775,10 @@ void logins_iterate(int serverNumber, struct config_settings server_login, struc
 
     loginPtr = NULL;
     loginPtr = (struct config_settings *) malloc(sizeof(struct config_settings));
+    if (loginPtr == NULL) {
+      fprintf(stderr, "conf: Unable to allocate memory.");
+      exit(1);
+    }
     #ifdef BE_VERBOSE
     fprintf(stderr, "Pointer loginPtr: %p\n", (void *) loginPtr);
     #endif
@@ -735,9 +973,17 @@ unsigned short get_port(int port)
 void handle_sigint()
 {
   int i;
-  for (i = 0; i < MAX_LOGINS; i++) {
-    if (connections[i] != NULL) {
-      xmpp_disconnect(connections[i]);
-    }
+  shutting_down = 1;
+  /* Disconnect connected threads. */
+  for (i = 0; i < thread_count; i++) {
+    int thread_id = all_threads[i].loc;
+    xmpp_disconnect(all_threads[i].my_pair->connections[thread_id]);
+  }
+  /* Give time for disconnects. */
+  sleep(1);
+  /* End all connection threads. */
+  /* Threads waiting for "pthread_cond_t draining" will call thread_cleanup() */
+  for (i = 0; i < thread_count; i++) {
+    pthread_cancel(all_threads[i].thread);
   }
 }
