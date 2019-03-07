@@ -327,6 +327,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
 
   /* We're not shutting down, get threadmap */
   thread = pthread_self();
+  my_threadmap = NULL;
   for (i = 0; i < thread_count; i++) {
     if (pthread_equal(all_threads[i].thread, thread)) {
       my_threadmap = &all_threads[i];
@@ -334,7 +335,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
   }
 
   /* Check if we're connection draining */
-  if (my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
+  if (my_threadmap == NULL || my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
     xmpp_stop(ctx);
     return;
   }
