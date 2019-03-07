@@ -27,10 +27,10 @@ Requirements
 
 firebase-upstream-server requires:
 
-- libstrophe and its dependencies
-- openssl
-- libconfig
-- libjson-c
+- [libstrophe](https://github.com/strophe/libstrophe) and its dependencies ([libexpat](https://github.com/libexpat/libexpat)/[libxml2](https://github.com/GNOME/libxml2), [openssl](https://github.com/openssl/openssl))
+- [openssl](https://github.com/openssl/openssl)
+- [libconfig](https://github.com/hyperrealm/libconfig)
+- [libjson-c](https://github.com/json-c/json-c)
 
 Configuration
 -------------
