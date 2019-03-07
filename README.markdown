@@ -17,10 +17,12 @@ It is currently minimally functional.
 Build Instructions
 ------------------
 
-From the src directory, run the following command (other C compilers
+From the src directory, run the following commands (other C compilers
 are available):
 
-    gcc firebase-upstream-server.c -o firebase-upstream-server -lstrophe -lssl -lcrypto -lconfig -ljson-c -lpthread
+    gcc -c config-parse.c
+    gcc -c firebase-upstream-server.c
+    gcc -o firebase-upstream-server firebase-upstream-server.o config-parse.o -lconfig -lssl -lcrypto -lstrophe -ljson-c -lpthread
 
 Requirements
 ------------
