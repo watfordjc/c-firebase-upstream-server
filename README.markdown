@@ -20,7 +20,7 @@ Build Instructions
 From the src directory, run the following command (other C compilers
 are available):
 
-    gcc firebase-upstream-server.c -o firebase-upstream-server -lstrophe -lssl -lcrypto -lconfig -ljson-c
+    gcc firebase-upstream-server.c -o firebase-upstream-server -lstrophe -lssl -lcrypto -lconfig -ljson-c -lpthread
 
 Requirements
 ------------
