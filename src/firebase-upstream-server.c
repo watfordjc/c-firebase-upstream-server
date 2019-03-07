@@ -74,6 +74,7 @@ struct config_t *config;
 /* Map threads to connection pairs and location in a connection_pair->thread[] */
 struct threadmap
 {
+  unsigned short reconnect_delay;
   pthread_t thread;
   struct connection_pair *my_pair;
   int loc;
@@ -305,15 +306,23 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
   const int error, xmpp_stream_error_t * const stream_error,
   void * const userdata)
 {
-  int reconnect_status = -1;
-  int reconnect_delay = 1;
   int i;
   xmpp_ctx_t *ctx = (xmpp_ctx_t *)userdata;
   struct threadmap *my_threadmap;
   pthread_t thread;
 
+  /* Get threadmap */
+  thread = pthread_self();
+  my_threadmap = NULL;
+  for (i = 0; i < thread_count; i++) {
+    if (pthread_equal(all_threads[i].thread, thread)) {
+      my_threadmap = &all_threads[i];
+    }
+  }
+
   if (status == XMPP_CONN_CONNECT) {
     fprintf(stderr, "DEBUG: CONNECTED\n");
+    my_threadmap->reconnect_delay = 1;
     return;
   }
 
@@ -325,14 +334,6 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
     return;
   }
 
-  /* We're not shutting down, get threadmap */
-  thread = pthread_self();
-  my_threadmap = NULL;
-  for (i = 0; i < thread_count; i++) {
-    if (pthread_equal(all_threads[i].thread, thread)) {
-      my_threadmap = &all_threads[i];
-    }
-  }
 
   /* Check if we're connection draining */
   if (my_threadmap == NULL || my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
@@ -340,17 +341,18 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
     return;
   }
 
-  /* We're not connection draining, attempt reconnection until successful */
-  while (reconnect_status != 0) {
-    /* Double reconnect delay each attempt until delay is 128 seconds */
-    if (reconnect_delay < 128) {
-      reconnect_delay *= 2;
-    }
-    /* Wait for reconnect delay */
-    sleep(reconnect_delay);
-    /* Attempt to reconnect */
-    reconnect_status = xmpp_connect_client(conn, my_threadmap->my_pair->login->host, my_threadmap->my_pair->login->port, conn_handler, userdata);
+  /* We're not connection draining, attempt reconnection */
+  /* Double reconnect delay each attempt until delay is 128 seconds */
+  if (my_threadmap->reconnect_delay < 128) {
+    my_threadmap->reconnect_delay *= 2;
   }
+  #ifdef BE_VERBOSE
+  fprintf(stderr, "conn: Reconnect delay is %ds.\n", my_threadmap->reconnect_delay);
+  #endif
+  /* Wait for reconnect delay */
+  sleep(my_threadmap->reconnect_delay);
+  /* Attempt to reconnect */
+  xmpp_connect_client(conn, my_threadmap->my_pair->login->host, my_threadmap->my_pair->login->port, conn_handler, userdata);
 }
 
 void thread_cleanup(void * ptr)
@@ -566,12 +568,15 @@ int main(int argc, char **argv)
     all_threads[i+1].id = i + 1;
     all_threads[i].loc = 0;
     all_threads[i+1].loc = 1;
+    all_threads[i].reconnect_delay = 1;
+    all_threads[i+1].reconnect_delay = 1;
     create_connection_pair(new_pair, i);
   }
 
   for (i = 0; i < thread_count; i++) {
     pthread_join(all_threads[i].thread, NULL);
     /* Release our context */
+    /* Release connection context */
     xmpp_ctx_free(all_threads[i].my_pair->ctx[all_threads[i].loc]);
   }
 
