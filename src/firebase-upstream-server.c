@@ -369,6 +369,8 @@ void thread_cleanup(void * ptr)
   EVP_cleanup();
   CRYPTO_cleanup_all_ex_data();
   ERR_remove_thread_state(NULL);
+  /* cleanup OpenSSL (must do for every thread) */
+  ERR_remove_state(0);
 
   xmpp_conn_release(my_threadmap->my_pair->connections[my_threadmap->loc]);
 }
@@ -469,6 +471,8 @@ void *create_connection(void * ptr)
   EVP_cleanup();
   CRYPTO_cleanup_all_ex_data();
   ERR_remove_thread_state(NULL);
+  /* cleanup OpenSSL (must do for every thread) */
+  ERR_remove_state(0);
 
   /* release our connection */
   xmpp_conn_release(conn);
@@ -570,9 +574,6 @@ int main(int argc, char **argv)
     /* Release our context */
     xmpp_ctx_free(all_threads[i].my_pair->ctx[all_threads[i].loc]);
   }
-
-  /* cleanup OpenSSL (must do for every thread) */
-  ERR_remove_state(0);
 
   /* final shutdown of the library */
   xmpp_shutdown();
