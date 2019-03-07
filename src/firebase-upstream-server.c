@@ -597,9 +597,30 @@ int main(int argc, char **argv)
   return 0;
 }
 
+void print_command_options_help(char *argv0, int exit_code)
+{
+  fprintf(stderr, "Usage: %s [options]\n", argv0);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  --config <file>\n");
+  fprintf(stderr, "    Path to configuration file.\n");
+  fprintf(stderr, "  -Z, --null\n");
+  fprintf(stderr, "    Separate output JSON with NUL instead of new line character.\n");
+  fprintf(stderr, "  --concat\n");
+  fprintf(stderr, "    Use concatenated JSON output.\n");
+  fprintf(stderr, "  --len-prefixed\n");
+  fprintf(stderr, "    Use length-prefixed JSON output.\n");
+  fprintf(stderr, "  --seq\n");
+  fprintf(stderr, "    Use application/json-seq output.\n");
+  fprintf(stderr, "  -v, --verbose\n");
+  fprintf(stderr, "    Use DEBUG level of libstrophe logging.\n");
+  fprintf(stderr, "  -h, --help\n");
+  fprintf(stderr, "    Display this information.\n");
+  exit(exit_code);
+}
+
+/* Parse command line arguments */
 int command_options(int argc, char **argv)
 {
-  /* handle command line arguments */
   int c;
   while (1)
   {
@@ -623,8 +644,7 @@ int command_options(int argc, char **argv)
 
     int option_index = 0;
     c = getopt_long(argc, argv, "Zhv", long_options, &option_index);
-    if (c == -1)
-    {
+    if (c == -1) {
       break;
     }
 
@@ -632,8 +652,7 @@ int command_options(int argc, char **argv)
     {
       case 0:
         /* if this options, set a flag, do nothing else now */
-        if (long_options[option_index].flag != 0)
-        {
+        if (long_options[option_index].flag != 0) {
           break;
         }
         break;
@@ -647,26 +666,16 @@ int command_options(int argc, char **argv)
         verbose = 1;
         break;
       case 'h':
+        print_command_options_help(argv[0], 0);
+        break;
       default:
-        fprintf(stderr, "Usage: %s [options]\n", argv[0]);
-        fprintf(stderr, "Options:\n");
-        fprintf(stderr, "  --config <file>\n");
-        fprintf(stderr, "    Path to configuration file.\n");
-        fprintf(stderr, "  -Z, --null\n");
-        fprintf(stderr, "    Separate output JSON with NUL instead of new line character.\n");
-        fprintf(stderr, "  --concat\n");
-        fprintf(stderr, "    Use concatenated JSON output.\n");
-        fprintf(stderr, "  --len-prefixed\n");
-        fprintf(stderr, "    Use length-prefixed JSON output.\n");
-        fprintf(stderr, "  --seq\n");
-        fprintf(stderr, "    Use application/json-seq output.\n");
-        fprintf(stderr, "  -v, --verbose\n");
-        fprintf(stderr, "    Use DEBUG level of libstrophe logging.\n");
-        fprintf(stderr, "  -h, --help\n");
-        fprintf(stderr, "    Display this information.\n");
-        exit(0);
+        print_command_options_help(argv[0], 1);
         break;
     }
+  }
+  if (strcmp(CONFIG_FILE, "") == 0) {
+    fprintf(stderr, "No configuration file specified.\n");
+    print_command_options_help(argv[0], 1);
   }
   return 0;
 }
