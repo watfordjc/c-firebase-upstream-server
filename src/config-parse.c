@@ -25,26 +25,6 @@ static int get_config_int(config_setting_t *setting, char *name);
 static int get_config_bool(config_setting_t *setting, char *name);
 static const char *get_config_string(config_setting_t *setting, char *name);
 
-/*
-int main(int argc, char const *argv[]) {
-  struct login_settings *logins;
-  struct config_pointer *configPtr;
-
-  logins = get_login_memory(0);
-
-  configPtr = open_config("../conf/xmpp.conf.example", &logins);
-  if (configPtr->pointer == NULL || configPtr->login_count < 1) {
-    free(logins);
-    exit(1);
-  }
-*/
-  /* Do stuff with logins[] here */
-/*
-  free(logins);
-  close_config(logins, configPtr);
-  return 0;
-}
-*/
 
 /* Open libconfig style configuration file located at 'file' */
 /* The memory location of (struct login_settings) 'logins' will be changed
