@@ -29,7 +29,7 @@ static const char *get_config_string(config_setting_t *setting, char *name);
 /* Open libconfig style configuration file located at 'file' */
 /* The memory location of (struct login_settings) 'logins' will be changed
     after the number of logins in the configuration file is known. */
-struct config_pointer *open_config(char *file, struct login_settings **logins, struct config_pointer *configPtr)
+struct config_pointer *open_config(const char *file, struct login_settings **logins, struct config_pointer *configPtr)
 {
   unsigned int loaded_config, login_count;
   struct config_t *config;
@@ -65,7 +65,6 @@ void close_config(struct config_pointer *configPtr)
   config_destroy(configPtr->pointer);
   free(configPtr->pointer);
 }
-
 
 static int servers_iterate(struct config_t *config, struct login_settings **logins)
 {
