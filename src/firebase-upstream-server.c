@@ -264,6 +264,7 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
 {
   struct threadmap *my_threadmap = (struct threadmap *) ptr;
   xmpp_ctx_t *ctx = my_threadmap->my_pair->ctx[my_threadmap->loc];
+  int reconnect_status = -1;
 
   /* We're connected */
   if (status == XMPP_CONN_CONNECT) {
@@ -273,28 +274,26 @@ void conn_handler(xmpp_conn_t * const conn, const xmpp_conn_event_t status,
   }
   /* We're not connected */
   fprintf(stderr, "DEBUG: DISCONNECTED\n");
-  /* Are we shutting down? */
-  if (shutting_down == 1) {
-    xmpp_stop(ctx);
-    return;
+
+  while (reconnect_status != 0) {
+    /* Are we shutting down or connection draining? */
+    if (shutting_down == 1 || my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
+      xmpp_stop(ctx);
+      return;
+    }
+    /* We're not connection draining, attempt reconnection */
+    /* Double reconnect delay each attempt until delay is 128 seconds */
+    if (my_threadmap->reconnect_delay < 128) {
+      my_threadmap->reconnect_delay *= 2;
+    }
+    #ifdef BE_VERBOSE
+    fprintf(stderr, "conn: Reconnect delay is %ds.\n", my_threadmap->reconnect_delay);
+    #endif
+    /* Wait for reconnect delay */
+    sleep(my_threadmap->reconnect_delay);
+    /* Attempt to reconnect */
+    reconnect_status = xmpp_connect_client(conn, my_threadmap->my_pair->login->host, my_threadmap->my_pair->login->port, conn_handler, my_threadmap);
   }
-  /* Are we connection draining? */
-  if (my_threadmap->my_pair->thread_draining[my_threadmap->loc] == 1) {
-    xmpp_stop(ctx);
-    return;
-  }
-  /* We're not connection draining, attempt reconnection */
-  /* Double reconnect delay each attempt until delay is 128 seconds */
-  if (my_threadmap->reconnect_delay < 128) {
-    my_threadmap->reconnect_delay *= 2;
-  }
-  #ifdef BE_VERBOSE
-  fprintf(stderr, "conn: Reconnect delay is %ds.\n", my_threadmap->reconnect_delay);
-  #endif
-  /* Wait for reconnect delay */
-  sleep(my_threadmap->reconnect_delay);
-  /* Attempt to reconnect */
-  xmpp_connect_client(conn, my_threadmap->my_pair->login->host, my_threadmap->my_pair->login->port, conn_handler, my_threadmap);
 }
 
 /* Cleanup thread's OpenSSL and XMPP state */
