@@ -32,26 +32,26 @@
 struct connection_pair
 {
   unsigned short thread_draining[2];
-  pthread_mutex_t mutex[2];
-  pthread_cond_t draining[2];
-  pthread_t *thread[2];
   int thread_return[2];
+  pthread_t *thread[2];
   xmpp_conn_t *connections[2];
   xmpp_ctx_t *ctx[2];
   struct login_settings *login;
   xmpp_log_t *log;
+  pthread_mutex_t *mutex[2];
+  pthread_cond_t *draining[2];
 };
 
 /* Map a thread to a connection_pair* and its location in a connection_pair->thread[] */
 struct threadmap
 {
   unsigned short reconnect_delay;
-  pthread_t thread;
-  struct connection_pair *my_pair;
   /* threadmap->loc is location in arrays in threadmap->my_pair */
   unsigned int loc;
   /* threadmap->id is location in all_threads[] array */
   unsigned int id;
+  pthread_t thread;
+  struct connection_pair *my_pair;
 };
 
 
@@ -90,10 +90,10 @@ unsigned int thread_count = 0;
 
 /* Change connection draining status of a thread/connection */
 void connection_draining(struct threadmap *my_threadmap, int is_draining) {
-  pthread_mutex_lock(&my_threadmap->my_pair->mutex[my_threadmap->loc]);
+  pthread_mutex_lock(my_threadmap->my_pair->mutex[my_threadmap->loc]);
   my_threadmap->my_pair->thread_draining[my_threadmap->loc] = is_draining;
-  pthread_cond_signal(&my_threadmap->my_pair->draining[my_threadmap->loc]);
-  pthread_mutex_unlock(&my_threadmap->my_pair->mutex[my_threadmap->loc]);
+  pthread_cond_signal(my_threadmap->my_pair->draining[my_threadmap->loc]);
+  pthread_mutex_unlock(my_threadmap->my_pair->mutex[my_threadmap->loc]);
 }
 
 /* Print JSON object, formatted according to command line parameters */
@@ -329,10 +329,10 @@ void swap_thread(struct threadmap *my_threadmap, int other_thread) {
   printf("I am %u, waiting for %d to change status.\n", my_threadmap->loc, other_thread);
   #endif
   while (my_threadmap->my_pair->thread_draining[other_thread] == 0) {
-    pthread_cond_wait(&my_threadmap->my_pair->draining[other_thread], &my_threadmap->my_pair->mutex[other_thread]);
+    pthread_cond_wait(my_threadmap->my_pair->draining[other_thread], my_threadmap->my_pair->mutex[other_thread]);
   }
   /* Do stuff needed here, but we're not using mutex for write lock, just waiting for value change */
-  pthread_mutex_unlock(&my_threadmap->my_pair->mutex[other_thread]);
+  pthread_mutex_unlock(my_threadmap->my_pair->mutex[other_thread]);
   /* Do stuff that doesn't need a read/write lock here */
   /* Other connection is draining, we need to connect */
   #ifdef BE_VERBOSE
@@ -407,7 +407,7 @@ void *create_connection(void * ptr)
 }
 
 /* Create a pair of connection threads */
-void create_connection_pair(struct connection_pair *my_pair, int first_thread)
+int create_connection_pair(struct connection_pair *my_pair, int first_thread)
 {
   int i;
   for (i = 0; i < 2; i++) {
@@ -416,13 +416,20 @@ void create_connection_pair(struct connection_pair *my_pair, int first_thread)
     my_threadmap->loc = i;
     my_threadmap->reconnect_delay = 1;
     my_threadmap->my_pair = my_pair;
-    pthread_mutex_init(&my_threadmap->my_pair->mutex[i], NULL);
-    pthread_cond_init(&my_threadmap->my_pair->draining[i], NULL);
+    my_threadmap->my_pair->mutex[i] = malloc(sizeof(pthread_mutex_t));
+    my_threadmap->my_pair->draining[i] = malloc(sizeof(pthread_cond_t));
+    if (my_threadmap->my_pair->mutex[i] == NULL || my_threadmap->my_pair->draining[i] == NULL) {
+      fprintf(stderr, "create_connection_pair[%d].[%d]: Unable to allocate memory.\n", first_thread, i);
+      return -1;
+    }
+    pthread_mutex_init(my_threadmap->my_pair->mutex[i], NULL);
+    pthread_cond_init(my_threadmap->my_pair->draining[i], NULL);
     my_threadmap->my_pair->thread_draining[i] = 0;
     my_threadmap->my_pair->ctx[i] = xmpp_ctx_new(NULL, my_threadmap->my_pair->log);
     my_threadmap->my_pair->thread_return[i] = pthread_create(&my_threadmap->thread, NULL, &create_connection, (void *) my_threadmap);
     thread_count++;
   }
+  return 0;
 }
 
 /* Get memory allocation for all_threads[] - 2 (struct threadmap) per login */
@@ -430,17 +437,23 @@ void threads_init(struct config_pointer *configPtr)
 {
   all_threads = malloc(configPtr->login_count * 2 * sizeof(struct threadmap));
   if (all_threads == NULL) {
-    fprintf(stderr, "threads_init: Unable to allocate memory.");
+    fprintf(stderr, "threads_init: Unable to allocate memory.\n");
     close_config(configPtr);
     exit(1);
   }
 }
 
 /* Free connection pairs */
-void threads_cleanup(int logins_count)
+void threads_cleanup(unsigned int logins_count)
 {
-  int i;
+  unsigned int i;
   /* Release connection pairs (connection_pair*) */
+  for (i = 0; i < thread_count; i++) {
+    pthread_cond_destroy(all_threads[i].my_pair->draining[all_threads[i].loc]);
+    pthread_mutex_destroy(all_threads[i].my_pair->mutex[all_threads[i].loc]);
+    free(all_threads[i].my_pair->draining[all_threads[i].loc]);
+    free(all_threads[i].my_pair->mutex[all_threads[i].loc]);
+  }
   for (i = 0; i < logins_count; i++) {
     free(all_threads[i*2].my_pair);
   }
@@ -449,10 +462,10 @@ void threads_cleanup(int logins_count)
 }
 
 /* Start libstrophe library and create connection threads (blocking) */
-void connections_start(struct login_settings *logins, int logins_count)
+void connections_start(struct login_settings *logins, unsigned int logins_count)
 {
   xmpp_log_t *log;
-  int i;
+  unsigned int i;
   /* init libstrophe library */
   xmpp_initialize();
 
@@ -465,7 +478,7 @@ void connections_start(struct login_settings *logins, int logins_count)
     struct login_settings *login;
     new_pair = (struct connection_pair *) (malloc(sizeof(struct connection_pair) * 1));
     if (new_pair == NULL) {
-      fprintf(stderr, "connections_start: Unable to allocate memory.");
+      fprintf(stderr, "connections_start[%u]: Unable to allocate memory.\n", i);
       return;
     }
 
@@ -474,7 +487,9 @@ void connections_start(struct login_settings *logins, int logins_count)
     new_pair->log = log;
 
     logins[i].pairs = new_pair;
-    create_connection_pair(new_pair, i);
+    if (create_connection_pair(new_pair, i) == -1) {
+      return;
+    }
   }
 }
 
@@ -499,7 +514,7 @@ void main_run() {
   /* Create a temporary pointer for logins[] */
   logins = (struct login_settings *) calloc(0, sizeof(struct login_settings));
   if (logins == NULL) {
-    fprintf(stderr, "main: Unable to allocate memory.");
+    fprintf(stderr, "main: Unable to allocate memory.\n");
     exit(1);
   }
   /* Open configuration file and populate logins[] */

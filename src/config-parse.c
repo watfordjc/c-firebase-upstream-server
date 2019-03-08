@@ -31,7 +31,7 @@ static const char *get_config_string(config_setting_t *setting, char *name);
     after the number of logins in the configuration file is known. */
 struct config_pointer *open_config(char *file, struct login_settings **logins, struct config_pointer *configPtr)
 {
-  int loaded_config, login_count;
+  unsigned int loaded_config, login_count;
   struct config_t *config;
   config = calloc(sizeof(config_t), 1);
 
