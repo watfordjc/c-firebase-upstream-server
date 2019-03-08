@@ -16,5 +16,5 @@ struct config_pointer
   struct config_t *pointer;
 };
 
-struct config_pointer *open_config(char *file, struct login_settings **config, struct config_pointer *configPtr);
+struct config_pointer *open_config(const char *file, struct login_settings **config, struct config_pointer *configPtr);
 void close_config(struct config_pointer *configPtr);
