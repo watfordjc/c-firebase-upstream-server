@@ -650,7 +650,7 @@ void handle_sigint()
     xmpp_disconnect(all_threads[i].my_pair->connections[thread_id]);
   }
   /* Give time for disconnects. */
-  sleep(1);
+  sleep(3);
   /* End all connection threads. */
   /* Threads waiting for "pthread_cond_t draining" will call thread_cleanup() */
   for (i = 0; i < thread_count; i++) {
