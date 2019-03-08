@@ -1,7 +1,7 @@
 firebase-upstream-server
 ========================
 
-firebase-upstream-server is an implementation of the Firebase XMPP Connection Server protocol.
+firebase-upstream-server is an implementation of the Firebase XMPP Connection Server protocol in C.
 
 It connects to the FCM XMPP servers using a configuration file (`--conf <file>`), and sends line-delimited JSON to stdout.
 Informational, debug, and error messages are sent to stderr.
@@ -13,6 +13,9 @@ There are command line options available for alternative JSON-streaming formats:
 - NUL-terminated (`--null`, `-Z`)
 
 It is currently minimally functional.
+- Supports simultaneous connections to multiple servers using multiple accounts.
+- Connection draining support using threading (untested).
+- Automatic reconnection using exponential back-off (128 second maximum between retries).
 
 Build Instructions
 ------------------
