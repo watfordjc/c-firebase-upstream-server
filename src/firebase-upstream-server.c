@@ -83,16 +83,7 @@ void thread_cleanup(void * ptr);
 
 /* OpenSSL function declarations for cleanup */
 int FIPS_mode_set();
-void CRYPTO_set_locking_callback();
-void CRYPTO_set_id_callback();
-void SSL_COMP_free_compression_methods();
-int ENGINE_cleanup();
-int CONF_modules_free();
 int CONF_modules_unload();
-void COMP_zlib_cleanup();
-int ERR_free_strings();
-void EVP_cleanup();
-void CRYPTO_cleanup_all_ex_data();
 void ERR_remove_state();
 void ERR_remove_thread_state();
 
@@ -379,6 +370,15 @@ void *create_connection(void * ptr)
   my_pair->connections[my_threadmap->loc] = conn;
   /* set TLS connection flags */
   xmpp_conn_set_flags(conn, login->flags);
+  /* set TLS CA file/path */
+  if (xmpp_version_check(0, 11)) {
+    if (login->capath) {
+      xmpp_conn_set_capath(conn, login->capath);
+    }
+    if (login->cafile) {
+      xmpp_conn_set_cafile(conn, login->cafile);
+    }
+  }
 
   /* setup authentication information */
   xmpp_conn_set_jid(conn, login->jid);
@@ -665,16 +665,7 @@ void thread_cleanup(void * ptr)
   struct threadmap *my_threadmap = (struct threadmap *) ptr;
   /* cleanup OpenSSL */
   FIPS_mode_set(0);
-  CRYPTO_set_locking_callback(NULL);
-  CRYPTO_set_id_callback(NULL);
-  SSL_COMP_free_compression_methods();
-  ENGINE_cleanup();
-  CONF_modules_free();
   CONF_modules_unload();
-  COMP_zlib_cleanup();
-  ERR_free_strings();
-  EVP_cleanup();
-  CRYPTO_cleanup_all_ex_data();
   ERR_remove_thread_state(NULL);
   /* cleanup OpenSSL (must do for every thread) */
   ERR_remove_state(0);

@@ -4,6 +4,8 @@ servers:
   tls = "tls";
   port = 5235;
   host = "fcm-xmpp.googleapis.com";
+#  capath = "/etc/ssl/certs";
+  cafile = "/etc/ssl/certs/ca-certificates.crt";
 
   logins:
   ({

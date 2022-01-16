@@ -8,6 +8,8 @@ struct login_settings
   const char *host;
   const char *jid;
   const char *pass;
+  const char *capath;
+  const char *cafile;
 };
 
 struct config_pointer

@@ -179,6 +179,8 @@ static int logins_iterate(struct config_setting_t *server_element, struct login_
     logins->enabled = 1;
     logins->host = get_config_string(server_element, "host");
     logins->flags = get_tls_flags(get_config_string(server_element, "tls"));
+    logins->capath = get_config_string(server_element, "capath");
+    logins->cafile = get_config_string(server_element, "cafile");
     logins->port = get_port(get_config_int(server_element, "port"));
     logins->pointer = login_element;
     logins->jid = get_config_string(login_element, "jid");
